@@ -1,7 +1,9 @@
 using Silk.NET.Core;
+using Silk.NET.Core.Native;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.EXT;
 using Silk.NET.Windowing;
 using System.Runtime.InteropServices;
 
@@ -9,9 +11,19 @@ namespace Fidelity;
 
 public unsafe class Application : IApplication, IDisposable
 {
-  private readonly IWindow _window;
-  private Vk _vk;
-  private Instance _instance;
+  private readonly IWindow window;
+  private Vk vk;
+  private Instance instance;
+
+  private ExtDebugUtils? debugUtils;
+  private DebugUtilsMessengerEXT debugMessenger;
+
+  private bool EnableValidationLayers = true;
+
+  private readonly string[] validationLayers =
+    [
+        "VK_LAYER_KHRONOS_validation"
+    ];
 
   public Application()
   {
@@ -19,25 +31,20 @@ public unsafe class Application : IApplication, IDisposable
     options.Size = new Vector2D<int>(800, 600);
     options.Title = "Vulkan using Silk.NET";
 
-    _window = Window.Create(options);
-    _window.Initialize();
+    window = Window.Create(options);
+    window.Initialize();
 
-    _window.Load += Load;
-    _window.Update += Update;
-    _window.Render += Render;
-    _window.FramebufferResize += ResizeFramebuffer;
-
-    if (_window.VkSurface == null)
-    {
-      //throw new Exception("Windowing platform doesn't support Vulkan.");
-    }
+    window.Load += Load;
+    window.Update += Update;
+    window.Render += Render;
+    window.FramebufferResize += ResizeFramebuffer;
   }
 
   public void KeyDown(IKeyboard arg1, Key arg2, int arg3)
   {
     if (arg2 == Key.Escape)
     {
-      _window.Close();
+      window.Close();
     }
   }
 
@@ -58,7 +65,7 @@ public unsafe class Application : IApplication, IDisposable
 
   public void Run()
   {
-    _window.Run();
+    window.Run();
   }
 
   public void Update(double dt)
@@ -68,20 +75,31 @@ public unsafe class Application : IApplication, IDisposable
 
   public void Dispose()
   {
-    _vk!.DestroyInstance(_instance, null);
-    _vk!.Dispose();
+    if (EnableValidationLayers)
+    {
+      debugUtils!.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
+    }
 
-    _window?.Dispose();
+    vk!.DestroyInstance(instance, null);
+    vk!.Dispose();
+
+    window?.Dispose();
   }
 
   private void InitVulkan()
   {
-    CreateVkInstance();
+    CreateInstance();
+    SetupDebugMessenger();
   }
 
-  private void CreateVkInstance()
+  private void CreateInstance()
   {
-    _vk = Vk.GetApi();
+    vk = Vk.GetApi();
+
+    if (EnableValidationLayers && !CheckValidationLayerSupport())
+    {
+      throw new Exception("validation layers requested, but not available!");
+    }
 
     ApplicationInfo appInfo = new()
     {
@@ -99,18 +117,101 @@ public unsafe class Application : IApplication, IDisposable
       PApplicationInfo = &appInfo
     };
 
-    var glfwExtensions = _window!.VkSurface!.GetRequiredExtensions(out var glfwExtensionCount);
+    var extensions = GetRequiredExtensions();
+    createInfo.EnabledExtensionCount = (uint)extensions.Length;
+    createInfo.PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(extensions); ;
+    createInfo.Flags = InstanceCreateFlags.EnumeratePortabilityBitKhr;
 
-    createInfo.EnabledExtensionCount = glfwExtensionCount;
-    createInfo.PpEnabledExtensionNames = glfwExtensions;
-    createInfo.EnabledLayerCount = 0;
+    if (EnableValidationLayers)
+    {
+      createInfo.EnabledLayerCount = (uint)validationLayers.Length;
+      createInfo.PpEnabledLayerNames = (byte**)SilkMarshal.StringArrayToPtr(validationLayers);
 
-    if (_vk.CreateInstance(ref createInfo, null, out _instance) != Result.Success)
+      DebugUtilsMessengerCreateInfoEXT debugCreateInfo = new();
+      PopulateDebugMessengerCreateInfo(ref debugCreateInfo);
+      createInfo.PNext = &debugCreateInfo;
+    }
+    else
+    {
+      createInfo.EnabledLayerCount = 0;
+      createInfo.PNext = null;
+    }
+
+    if (vk.CreateInstance(createInfo, null, out instance) != Result.Success)
     {
       throw new Exception("failed to create instance!");
     }
 
     Marshal.FreeHGlobal((IntPtr)appInfo.PApplicationName);
     Marshal.FreeHGlobal((IntPtr)appInfo.PEngineName);
+    SilkMarshal.Free((nint)createInfo.PpEnabledExtensionNames);
+
+    if (EnableValidationLayers)
+    {
+      SilkMarshal.Free((nint)createInfo.PpEnabledLayerNames);
+    }
+  }
+
+  private string[] GetRequiredExtensions()
+  {
+    var glfwExtensions = window!.VkSurface!.GetRequiredExtensions(out var glfwExtensionCount);
+    var extensions = SilkMarshal.PtrToStringArray((nint)glfwExtensions, (int)glfwExtensionCount);
+    extensions = extensions.Append("VK_KHR_portability_enumeration").ToArray();
+    if (EnableValidationLayers)
+    {
+      return extensions.Append(ExtDebugUtils.ExtensionName).ToArray();
+    }
+
+    return extensions;
+  }
+
+  private void PopulateDebugMessengerCreateInfo(ref DebugUtilsMessengerCreateInfoEXT createInfo)
+  {
+    createInfo.SType = StructureType.DebugUtilsMessengerCreateInfoExt;
+    createInfo.MessageSeverity = DebugUtilsMessageSeverityFlagsEXT.VerboseBitExt |
+                                 DebugUtilsMessageSeverityFlagsEXT.WarningBitExt |
+                                 DebugUtilsMessageSeverityFlagsEXT.ErrorBitExt;
+    createInfo.MessageType = DebugUtilsMessageTypeFlagsEXT.GeneralBitExt |
+                             DebugUtilsMessageTypeFlagsEXT.PerformanceBitExt |
+                             DebugUtilsMessageTypeFlagsEXT.ValidationBitExt;
+    createInfo.PfnUserCallback = (DebugUtilsMessengerCallbackFunctionEXT)DebugCallback;
+  }
+
+  private void SetupDebugMessenger()
+  {
+    if (!EnableValidationLayers) return;
+
+    //TryGetInstanceExtension equivilant to method CreateDebugUtilsMessengerEXT from original tutorial.
+    if (!vk!.TryGetInstanceExtension(instance, out debugUtils)) return;
+
+    DebugUtilsMessengerCreateInfoEXT createInfo = new();
+    PopulateDebugMessengerCreateInfo(ref createInfo);
+
+    if (debugUtils!.CreateDebugUtilsMessenger(instance, in createInfo, null, out debugMessenger) != Result.Success)
+    {
+      throw new Exception("failed to set up debug messenger!");
+    }
+  }
+
+  private bool CheckValidationLayerSupport()
+  {
+    uint layerCount = 0;
+    vk!.EnumerateInstanceLayerProperties(ref layerCount, null);
+    var availableLayers = new LayerProperties[layerCount];
+    fixed (LayerProperties* availableLayersPtr = availableLayers)
+    {
+      vk!.EnumerateInstanceLayerProperties(ref layerCount, availableLayersPtr);
+    }
+
+    var availableLayerNames = availableLayers.Select(layer => Marshal.PtrToStringAnsi((IntPtr)layer.LayerName)).ToHashSet();
+
+    return validationLayers.All(availableLayerNames.Contains);
+  }
+
+  private uint DebugCallback(DebugUtilsMessageSeverityFlagsEXT messageSeverity, DebugUtilsMessageTypeFlagsEXT messageTypes, DebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+  {
+    Console.WriteLine($"validation layer:" + Marshal.PtrToStringAnsi((nint)pCallbackData->PMessage));
+
+    return Vk.False;
   }
 }
