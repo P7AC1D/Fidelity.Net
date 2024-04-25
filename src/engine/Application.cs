@@ -9,6 +9,15 @@ using System.Runtime.InteropServices;
 
 namespace Fidelity;
 
+struct QueueFamilyIndices
+{
+  public uint? GraphicsFamily { get; set; }
+  public bool IsComplete()
+  {
+    return GraphicsFamily.HasValue;
+  }
+}
+
 public unsafe class Application : IApplication, IDisposable
 {
   private readonly IWindow window;
@@ -17,6 +26,8 @@ public unsafe class Application : IApplication, IDisposable
 
   private ExtDebugUtils? debugUtils;
   private DebugUtilsMessengerEXT debugMessenger;
+
+  private PhysicalDevice physicalDevice;
 
   private bool EnableValidationLayers = true;
 
@@ -77,11 +88,11 @@ public unsafe class Application : IApplication, IDisposable
   {
     if (EnableValidationLayers)
     {
-      debugUtils!.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
+      debugUtils?.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
     }
 
-    vk!.DestroyInstance(instance, null);
-    vk!.Dispose();
+    vk?.DestroyInstance(instance, null);
+    vk?.Dispose();
 
     window?.Dispose();
   }
@@ -90,6 +101,65 @@ public unsafe class Application : IApplication, IDisposable
   {
     CreateInstance();
     SetupDebugMessenger();
+    PickPhysicalDevice();
+  }
+
+  private void PickPhysicalDevice()
+  {
+    var devices = vk!.GetPhysicalDevices(instance);
+
+    foreach (var device in devices)
+    {
+      if (IsDeviceSuitable(device))
+      {
+        physicalDevice = device;
+        break;
+      }
+    }
+
+    if (physicalDevice.Handle == 0)
+    {
+      throw new Exception("failed to find a suitable GPU!");
+    }
+  }
+
+  private bool IsDeviceSuitable(PhysicalDevice device)
+  {
+    var indices = FindQueueFamilies(device);
+
+    return indices.IsComplete();
+  }
+
+  private QueueFamilyIndices FindQueueFamilies(PhysicalDevice device)
+  {
+    var indices = new QueueFamilyIndices();
+
+    uint queueFamilityCount = 0;
+    vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, null);
+
+    var queueFamilies = new QueueFamilyProperties[queueFamilityCount];
+    fixed (QueueFamilyProperties* queueFamiliesPtr = queueFamilies)
+    {
+      vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, queueFamiliesPtr);
+    }
+
+    uint i = 0;
+    foreach (var queueFamily in queueFamilies)
+    {
+      if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+      {
+        indices.GraphicsFamily = i;
+      }
+
+      if (indices.IsComplete())
+      {
+        break;
+      }
+
+      i++;
+    }
+
+    return indices;
   }
 
   private void CreateInstance()
