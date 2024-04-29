@@ -4,7 +4,9 @@ using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.EXT;
+using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 namespace Fidelity;
@@ -12,9 +14,11 @@ namespace Fidelity;
 struct QueueFamilyIndices
 {
   public uint? GraphicsFamily { get; set; }
+  public uint? PresentFamily { get; set; }
+
   public bool IsComplete()
   {
-    return GraphicsFamily.HasValue;
+    return GraphicsFamily.HasValue && PresentFamily.HasValue;
   }
 }
 
@@ -26,11 +30,14 @@ public unsafe class Application : IApplication, IDisposable
 
   private ExtDebugUtils? debugUtils;
   private DebugUtilsMessengerEXT debugMessenger;
+  private KhrSurface? khrSurface;
+  private SurfaceKHR surface;
 
   private PhysicalDevice physicalDevice;
   private Device device;
 
   private Queue graphicsQueue;
+  private Queue presentQueue;
 
   private bool EnableValidationLayers = true;
 
@@ -80,6 +87,7 @@ public unsafe class Application : IApplication, IDisposable
   public void Run()
   {
     window.Run();
+    CleanUp();
   }
 
   public void Update(double dt)
@@ -89,6 +97,12 @@ public unsafe class Application : IApplication, IDisposable
 
   public void Dispose()
   {
+    CleanUp();
+    window?.Dispose();
+  }
+
+  private void CleanUp()
+  {
     vk?.DestroyDevice(device, null);
 
     if (EnableValidationLayers)
@@ -96,18 +110,29 @@ public unsafe class Application : IApplication, IDisposable
       debugUtils?.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
     }
 
+    khrSurface!.DestroySurface(instance, surface, null);
     vk?.DestroyInstance(instance, null);
     vk?.Dispose();
 
-    window?.Dispose();
   }
 
   private void InitVulkan()
   {
     CreateInstance();
     SetupDebugMessenger();
+    CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
+  }
+
+  private void CreateSurface()
+  {
+    if (!vk!.TryGetInstanceExtension<KhrSurface>(instance, out khrSurface))
+    {
+      throw new NotSupportedException("KHR_surface extension not found.");
+    }
+
+    surface = window!.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
   }
 
   private void PickPhysicalDevice()
@@ -140,23 +165,31 @@ public unsafe class Application : IApplication, IDisposable
   {
     var indices = FindQueueFamilies(physicalDevice);
 
-    DeviceQueueCreateInfo queueCreateInfo = new()
-    {
-      SType = StructureType.DeviceQueueCreateInfo,
-      QueueFamilyIndex = indices.GraphicsFamily!.Value,
-      QueueCount = 1
-    };
+    var uniqueQueueFamilies = new[] { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value };
+    uniqueQueueFamilies = uniqueQueueFamilies.Distinct().ToArray();
+
+    using var mem = GlobalMemory.Allocate(uniqueQueueFamilies.Length * sizeof(DeviceQueueCreateInfo));
+    var queueCreateInfos = (DeviceQueueCreateInfo*)Unsafe.AsPointer(ref mem.GetPinnableReference());
 
     float queuePriority = 1.0f;
-    queueCreateInfo.PQueuePriorities = &queuePriority;
+    for (int i = 0; i < uniqueQueueFamilies.Length; i++)
+    {
+      queueCreateInfos[i] = new()
+      {
+        SType = StructureType.DeviceQueueCreateInfo,
+        QueueFamilyIndex = uniqueQueueFamilies[i],
+        QueueCount = 1,
+        PQueuePriorities = &queuePriority
+      };
+    }
 
     PhysicalDeviceFeatures deviceFeatures = new();
 
     DeviceCreateInfo createInfo = new()
     {
       SType = StructureType.DeviceCreateInfo,
-      QueueCreateInfoCount = 1,
-      PQueueCreateInfos = &queueCreateInfo,
+      QueueCreateInfoCount = (uint)uniqueQueueFamilies.Length,
+      PQueueCreateInfos = queueCreateInfos,
 
       PEnabledFeatures = &deviceFeatures,
 
@@ -179,6 +212,7 @@ public unsafe class Application : IApplication, IDisposable
     }
 
     vk!.GetDeviceQueue(device, indices.GraphicsFamily!.Value, 0, out graphicsQueue);
+    vk!.GetDeviceQueue(device, indices.PresentFamily!.Value, 0, out presentQueue);
 
     if (EnableValidationLayers)
     {
@@ -199,12 +233,20 @@ public unsafe class Application : IApplication, IDisposable
       vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, queueFamiliesPtr);
     }
 
+
     uint i = 0;
     foreach (var queueFamily in queueFamilies)
     {
       if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
       {
         indices.GraphicsFamily = i;
+      }
+
+      khrSurface!.GetPhysicalDeviceSurfaceSupport(device, i, surface, out var presentSupport);
+
+      if (presentSupport)
+      {
+        indices.PresentFamily = i;
       }
 
       if (indices.IsComplete())
