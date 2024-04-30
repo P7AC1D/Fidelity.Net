@@ -157,6 +157,7 @@ public unsafe class Application : IApplication, IDisposable
     CreateLogicalDevice();
     CreateSwapChain();
     CreateImageViews();
+    CreateGraphicsPipeline();
   }
 
   private void CreateImageViews()
@@ -195,6 +196,43 @@ public unsafe class Application : IApplication, IDisposable
       }
     }
   }
+
+  private void CreateGraphicsPipeline()
+    {
+        var vertShaderCode = File.ReadAllBytes("shaders/vert.spv");
+        var fragShaderCode = File.ReadAllBytes("shaders/frag.spv");
+
+        var vertShaderModule = CreateShaderModule(vertShaderCode);
+        var fragShaderModule = CreateShaderModule(fragShaderCode);
+
+        PipelineShaderStageCreateInfo vertShaderStageInfo = new()
+        {
+            SType = StructureType.PipelineShaderStageCreateInfo,
+            Stage = ShaderStageFlags.VertexBit,
+            Module = vertShaderModule,
+            PName = (byte*)SilkMarshal.StringToPtr("main")
+        };
+
+        PipelineShaderStageCreateInfo fragShaderStageInfo = new()
+        {
+            SType = StructureType.PipelineShaderStageCreateInfo,
+            Stage = ShaderStageFlags.FragmentBit,
+            Module = fragShaderModule,
+            PName = (byte*)SilkMarshal.StringToPtr("main")
+        };
+
+        var shaderStages = stackalloc[]
+        {
+            vertShaderStageInfo,
+            fragShaderStageInfo
+        };
+
+        vk!.DestroyShaderModule(device, fragShaderModule, null);
+        vk!.DestroyShaderModule(device, vertShaderModule, null);
+
+        SilkMarshal.Free((nint)vertShaderStageInfo.PName);
+        SilkMarshal.Free((nint)fragShaderStageInfo.PName);
+    }
 
   private void CreateSurface()
   {
