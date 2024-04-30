@@ -149,6 +149,7 @@ public unsafe class Application : IApplication, IDisposable
     CreateSurface();
     PickPhysicalDevice();
     CreateLogicalDevice();
+    CreateSwapChain();
   }
 
   private void CreateSurface()
@@ -228,7 +229,8 @@ public unsafe class Application : IApplication, IDisposable
 
       PEnabledFeatures = &deviceFeatures,
 
-      EnabledExtensionCount = 0
+      EnabledExtensionCount = (uint)deviceExtensions.Length,
+      PpEnabledExtensionNames = (byte**)SilkMarshal.StringArrayToPtr(deviceExtensions)
     };
 
     if (EnableValidationLayers)
