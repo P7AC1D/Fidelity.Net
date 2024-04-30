@@ -53,6 +53,7 @@ public unsafe class Application : IApplication, IDisposable
   private Image[]? swapChainImages;
   private Format swapChainImageFormat;
   private Extent2D swapChainExtent;
+  private ImageView[]? swapChainImageViews;
 
   private readonly string[] deviceExtensions = new[]
     {
@@ -127,6 +128,11 @@ public unsafe class Application : IApplication, IDisposable
 
   private void CleanUp()
   {
+    foreach (var imageView in swapChainImageViews!)
+    {
+      vk!.DestroyImageView(device, imageView, null);
+    }
+
     khrSwapChain!.DestroySwapchain(device, swapChain, null);
 
     vk!.DestroyDevice(device, null);
@@ -150,6 +156,44 @@ public unsafe class Application : IApplication, IDisposable
     PickPhysicalDevice();
     CreateLogicalDevice();
     CreateSwapChain();
+    CreateImageViews();
+  }
+
+  private void CreateImageViews()
+  {
+    swapChainImageViews = new ImageView[swapChainImages!.Length];
+
+    for (int i = 0; i < swapChainImages.Length; i++)
+    {
+      ImageViewCreateInfo createInfo = new()
+      {
+        SType = StructureType.ImageViewCreateInfo,
+        Image = swapChainImages[i],
+        ViewType = ImageViewType.Type2D,
+        Format = swapChainImageFormat,
+        Components =
+                {
+                    R = ComponentSwizzle.Identity,
+                    G = ComponentSwizzle.Identity,
+                    B = ComponentSwizzle.Identity,
+                    A = ComponentSwizzle.Identity,
+                },
+        SubresourceRange =
+                {
+                    AspectMask = ImageAspectFlags.ColorBit,
+                    BaseMipLevel = 0,
+                    LevelCount = 1,
+                    BaseArrayLayer = 0,
+                    LayerCount = 1,
+                }
+
+      };
+
+      if (vk!.CreateImageView(device, createInfo, null, out swapChainImageViews[i]) != Result.Success)
+      {
+        throw new Exception("failed to create image views!");
+      }
+    }
   }
 
   private void CreateSurface()
