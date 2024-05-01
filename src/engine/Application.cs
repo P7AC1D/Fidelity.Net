@@ -69,7 +69,7 @@ public unsafe class Application : IApplication, IDisposable
   private Fence[]? inFlightFences;
   private Fence[]? imagesInFlight;
   private int currentFrame = 0;
-
+  private bool frameBufferResized = false;
 
   const int MAX_FRAMES_IN_FLIGHT = 2;
 
@@ -95,7 +95,7 @@ public unsafe class Application : IApplication, IDisposable
     window.Load += Load;
     window.Update += Update;
     window.Render += Render;
-    window.FramebufferResize += ResizeFramebuffer;
+    window.Resize += FramebufferResizeCallback;
 
     if (window.VkSurface is null)
     {
@@ -117,12 +117,46 @@ public unsafe class Application : IApplication, IDisposable
   {
   }
 
+  private void RecreateSwapChain()
+  {
+    Vector2D<int> framebufferSize = window!.FramebufferSize;
+
+    while (framebufferSize.X == 0 || framebufferSize.Y == 0)
+    {
+      framebufferSize = window.FramebufferSize;
+      window.DoEvents();
+    }
+
+    vk!.DeviceWaitIdle(device);
+
+    CleanUpSwapChain();
+
+    CreateSwapChain();
+    CreateImageViews();
+    CreateRenderPass();
+    CreateGraphicsPipeline();
+    CreateFramebuffers();
+    CreateCommandBuffers();
+
+    imagesInFlight = new Fence[swapChainImages!.Length];
+  }
+
   public void Render(double dt)
   {
     vk!.WaitForFences(device, 1, inFlightFences![currentFrame], true, ulong.MaxValue);
 
     uint imageIndex = 0;
-    khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame], default, ref imageIndex);
+    var result = khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame], default, ref imageIndex);
+
+    if (result == Result.ErrorOutOfDateKhr)
+    {
+      RecreateSwapChain();
+      return;
+    }
+    else if (result != Result.Success && result != Result.SuboptimalKhr)
+    {
+      throw new Exception("failed to acquire swap chain image!");
+    }
 
     if (imagesInFlight![imageIndex].Handle != default)
     {
@@ -178,15 +212,19 @@ public unsafe class Application : IApplication, IDisposable
       PImageIndices = &imageIndex
     };
 
-    khrSwapChain.QueuePresent(presentQueue, presentInfo);
+    result = khrSwapChain.QueuePresent(presentQueue, presentInfo);
+
+    if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || frameBufferResized)
+    {
+      frameBufferResized = false;
+      RecreateSwapChain();
+    }
+    else if (result != Result.Success)
+    {
+      throw new Exception("failed to present swap chain image!");
+    }
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
-
-  }
-
-  public void ResizeFramebuffer(Vector2D<int> newSize)
-  {
-
   }
 
   public void Run()
@@ -206,37 +244,53 @@ public unsafe class Application : IApplication, IDisposable
     window?.Dispose();
   }
 
-  private void CleanUp()
+  private void CleanUpSwapChain()
   {
-    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-    {
-      vk!.DestroySemaphore(device, renderFinishedSemaphores![i], null);
-      vk!.DestroySemaphore(device, imageAvailableSemaphores![i], null);
-      vk!.DestroyFence(device, inFlightFences![i], null);
-    }
-
-    vk!.DestroyCommandPool(device, commandPool, null);
-
     foreach (var framebuffer in swapChainFramebuffers!)
     {
       vk!.DestroyFramebuffer(device, framebuffer, null);
     }
 
-    vk?.DestroyPipeline(device, graphicsPipeline, null);
-    vk?.DestroyPipelineLayout(device, pipelineLayout, null);
-    vk?.DestroyRenderPass(device, renderPass, null);
+    fixed (CommandBuffer* commandBuffersPtr = commandBuffers)
+    {
+      vk!.FreeCommandBuffers(device, commandPool, (uint)commandBuffers!.Length, commandBuffersPtr);
+    }
+
+    vk!.DestroyPipeline(device, graphicsPipeline, null);
+    vk!.DestroyPipelineLayout(device, pipelineLayout, null);
+    vk!.DestroyRenderPass(device, renderPass, null);
 
     foreach (var imageView in swapChainImageViews!)
     {
-      vk?.DestroyImageView(device, imageView, null);
+      vk!.DestroyImageView(device, imageView, null);
     }
 
-    khrSwapChain?.DestroySwapchain(device, swapChain, null);
+    khrSwapChain!.DestroySwapchain(device, swapChain, null);
+  }
+
+  private void FramebufferResizeCallback(Vector2D<int> obj)
+  {
+    frameBufferResized = true;
+  }
+
+  private void CleanUp()
+  {
+    CleanUpSwapChain();
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+      vk?.DestroySemaphore(device, renderFinishedSemaphores![i], null);
+      vk?.DestroySemaphore(device, imageAvailableSemaphores![i], null);
+      vk?.DestroyFence(device, inFlightFences![i], null);
+    }
+
+    vk?.DestroyCommandPool(device, commandPool, null);
 
     vk?.DestroyDevice(device, null);
 
     if (EnableValidationLayers)
     {
+      //DestroyDebugUtilsMessenger equivilant to method DestroyDebugUtilsMessengerEXT from original tutorial.
       debugUtils?.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
     }
 
