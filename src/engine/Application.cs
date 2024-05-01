@@ -177,7 +177,9 @@ public unsafe class Application : IApplication, IDisposable
     CreateImageViews();
     CreateRenderPass();
     CreateGraphicsPipeline();
+    CreateFramebuffers();
     CreateCommandPool();
+    CreateCommandBuffers();
   }
 
   private void CreateCommandPool()
