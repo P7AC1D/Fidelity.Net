@@ -9,6 +9,7 @@ using Silk.NET.Windowing;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using Semaphore = Silk.NET.Vulkan.Semaphore;
 
 namespace Fidelity;
 
@@ -63,10 +64,19 @@ public unsafe class Application : IApplication, IDisposable
   private CommandPool commandPool;
   private CommandBuffer[]? commandBuffers;
 
-  private readonly string[] deviceExtensions = new[]
-    {
+  private Semaphore[]? imageAvailableSemaphores;
+  private Semaphore[]? renderFinishedSemaphores;
+  private Fence[]? inFlightFences;
+  private Fence[]? imagesInFlight;
+  private int currentFrame = 0;
+
+
+  const int MAX_FRAMES_IN_FLIGHT = 2;
+
+  private readonly string[] deviceExtensions =
+    [
         KhrSwapchain.ExtensionName
-    };
+    ];
 
   private readonly string[] validationLayers =
     [
@@ -109,6 +119,68 @@ public unsafe class Application : IApplication, IDisposable
 
   public void Render(double dt)
   {
+    vk!.WaitForFences(device, 1, inFlightFences![currentFrame], true, ulong.MaxValue);
+
+    uint imageIndex = 0;
+    khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame], default, ref imageIndex);
+
+    if (imagesInFlight![imageIndex].Handle != default)
+    {
+      vk!.WaitForFences(device, 1, imagesInFlight[imageIndex], true, ulong.MaxValue);
+    }
+    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+
+    SubmitInfo submitInfo = new()
+    {
+      SType = StructureType.SubmitInfo,
+    };
+
+    var waitSemaphores = stackalloc[] { imageAvailableSemaphores[currentFrame] };
+    var waitStages = stackalloc[] { PipelineStageFlags.ColorAttachmentOutputBit };
+
+    var buffer = commandBuffers![imageIndex];
+
+    submitInfo = submitInfo with
+    {
+      WaitSemaphoreCount = 1,
+      PWaitSemaphores = waitSemaphores,
+      PWaitDstStageMask = waitStages,
+
+      CommandBufferCount = 1,
+      PCommandBuffers = &buffer
+    };
+
+    var signalSemaphores = stackalloc[] { renderFinishedSemaphores![currentFrame] };
+    submitInfo = submitInfo with
+    {
+      SignalSemaphoreCount = 1,
+      PSignalSemaphores = signalSemaphores,
+    };
+
+    vk!.ResetFences(device, 1, inFlightFences[currentFrame]);
+
+    if (vk!.QueueSubmit(graphicsQueue, 1, submitInfo, inFlightFences[currentFrame]) != Result.Success)
+    {
+      throw new Exception("failed to submit draw command buffer!");
+    }
+
+    var swapChains = stackalloc[] { swapChain };
+    PresentInfoKHR presentInfo = new()
+    {
+      SType = StructureType.PresentInfoKhr,
+
+      WaitSemaphoreCount = 1,
+      PWaitSemaphores = signalSemaphores,
+
+      SwapchainCount = 1,
+      PSwapchains = swapChains,
+
+      PImageIndices = &imageIndex
+    };
+
+    khrSwapChain.QueuePresent(presentQueue, presentInfo);
+
+    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 
   }
 
@@ -136,6 +208,13 @@ public unsafe class Application : IApplication, IDisposable
 
   private void CleanUp()
   {
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+      vk!.DestroySemaphore(device, renderFinishedSemaphores![i], null);
+      vk!.DestroySemaphore(device, imageAvailableSemaphores![i], null);
+      vk!.DestroyFence(device, inFlightFences![i], null);
+    }
+
     vk!.DestroyCommandPool(device, commandPool, null);
 
     foreach (var framebuffer in swapChainFramebuffers!)
@@ -180,6 +259,36 @@ public unsafe class Application : IApplication, IDisposable
     CreateFramebuffers();
     CreateCommandPool();
     CreateCommandBuffers();
+    CreateSyncObjects();
+  }
+
+  private void CreateSyncObjects()
+  {
+    imageAvailableSemaphores = new Semaphore[MAX_FRAMES_IN_FLIGHT];
+    renderFinishedSemaphores = new Semaphore[MAX_FRAMES_IN_FLIGHT];
+    inFlightFences = new Fence[MAX_FRAMES_IN_FLIGHT];
+    imagesInFlight = new Fence[swapChainImages!.Length];
+
+    SemaphoreCreateInfo semaphoreInfo = new()
+    {
+      SType = StructureType.SemaphoreCreateInfo,
+    };
+
+    FenceCreateInfo fenceInfo = new()
+    {
+      SType = StructureType.FenceCreateInfo,
+      Flags = FenceCreateFlags.SignaledBit,
+    };
+
+    for (var i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+    {
+      if (vk!.CreateSemaphore(device, semaphoreInfo, null, out imageAvailableSemaphores[i]) != Result.Success ||
+          vk!.CreateSemaphore(device, semaphoreInfo, null, out renderFinishedSemaphores[i]) != Result.Success ||
+          vk!.CreateFence(device, fenceInfo, null, out inFlightFences[i]) != Result.Success)
+      {
+        throw new Exception("failed to create synchronization objects for a frame!");
+      }
+    }
   }
 
   private void CreateCommandPool()
