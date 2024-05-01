@@ -72,7 +72,7 @@ struct SwapChainSupportDetails
   public PresentModeKHR[] PresentModes;
 }
 
-public unsafe class Application : IApplication, IDisposable
+public unsafe class Application : IDisposable
 {
   private readonly IWindow window;
   private Vk vk;
