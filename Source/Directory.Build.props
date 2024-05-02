@@ -2,5 +2,7 @@
  <PropertyGroup>
 	 <VulkanBinPath>$(VULKAN_SDK)\Bin</VulkanBinPath>
 	 <ShaderOutputPath>Shaders</ShaderOutputPath>
+	 <GLSLC Condition="'$(OS)' == 'Windows_NT'">glslc.exe</GLSLC>
+	 <GLSLC Condition="'$(OS)' != 'Windows_NT'">glslc</GLSLC>
  </PropertyGroup>
 </Project>
