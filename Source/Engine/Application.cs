@@ -1,3 +1,4 @@
+using Silk.NET.Assimp;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
 using Silk.NET.Input;
@@ -152,25 +153,11 @@ public unsafe class Application
   private bool frameBufferResized = false;
 
   const int MAX_FRAMES_IN_FLIGHT = 2;
+  const string MODEL_PATH = @"Assets\viking_room.obj";
+  const string TEXTURE_PATH = @"Assets\viking_room.png";
 
-  private Vertex[] vertices = new Vertex[]
-  {
-    new Vertex { pos = new Vector3D<float>(-0.5f,-0.5f, 0.0f), color = new Vector3D<float>(1.0f, 0.0f, 0.0f), textCoord = new Vector2D<float>(1.0f, 0.0f) },
-    new Vertex { pos = new Vector3D<float>(0.5f,-0.5f, 0.0f), color = new Vector3D<float>(0.0f, 1.0f, 0.0f), textCoord = new Vector2D<float>(0.0f, 0.0f) },
-    new Vertex { pos = new Vector3D<float>(0.5f,0.5f, 0.0f), color = new Vector3D<float>(0.0f, 0.0f, 1.0f), textCoord = new Vector2D<float>(0.0f, 1.0f) },
-    new Vertex { pos = new Vector3D<float>(-0.5f,0.5f, 0.0f), color = new Vector3D<float>(1.0f, 1.0f, 1.0f), textCoord = new Vector2D<float>(1.0f, 1.0f) },
-
-    new Vertex { pos = new Vector3D<float>(-0.5f,-0.5f, -0.5f), color = new Vector3D<float>(1.0f, 0.0f, 0.0f), textCoord = new Vector2D<float>(1.0f, 0.0f) },
-    new Vertex { pos = new Vector3D<float>(0.5f,-0.5f, -0.5f), color = new Vector3D<float>(0.0f, 1.0f, 0.0f), textCoord = new Vector2D<float>(0.0f, 0.0f) },
-    new Vertex { pos = new Vector3D<float>(0.5f,0.5f, -0.5f), color = new Vector3D<float>(0.0f, 0.0f, 1.0f), textCoord = new Vector2D<float>(0.0f, 1.0f) },
-    new Vertex { pos = new Vector3D<float>(-0.5f,0.5f, -0.5f), color = new Vector3D<float>(1.0f, 1.0f, 1.0f), textCoord = new Vector2D<float>(1.0f, 1.0f) },
-  };
-
-  private ushort[] indices = new ushort[]
-  {
-    0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-  };
+  private Vertex[] vertices;
+  private uint[] indices;
 
   private readonly string[] deviceExtensions =
     [
@@ -441,6 +428,7 @@ public unsafe class Application
     CreateTextureImage();
     CreateTextureImageView();
     CreateTextureSampler();
+    LoadModel();
     CreateVertexBuffer();
     CreateIndexBuffer();
     CreateUniformBuffers();
@@ -495,9 +483,71 @@ public unsafe class Application
     }
   }
 
+  private void LoadModel()
+  {
+    using var assimp = Assimp.GetApi();
+    var scene = assimp.ImportFile(MODEL_PATH, (uint)PostProcessPreset.TargetRealTimeMaximumQuality);
+
+    var vertexMap = new Dictionary<Vertex, uint>();
+    var vertices = new List<Vertex>();
+    var indices = new List<uint>();
+
+    VisitSceneNode(scene->MRootNode);
+
+    assimp.ReleaseImport(scene);
+
+    this.vertices = vertices.ToArray();
+    this.indices = indices.ToArray();
+
+    void VisitSceneNode(Node* node)
+    {
+      for (int m = 0; m < node->MNumMeshes; m++)
+      {
+        var mesh = scene->MMeshes[node->MMeshes[m]];
+
+        for (int f = 0; f < mesh->MNumFaces; f++)
+        {
+          var face = mesh->MFaces[f];
+
+          for (int i = 0; i < face.MNumIndices; i++)
+          {
+            uint index = face.MIndices[i];
+
+            var position = mesh->MVertices[index];
+            var texture = mesh->MTextureCoords[0][(int)index];
+
+            Vertex vertex = new()
+            {
+              pos = new Vector3D<float>(position.X, position.Y, position.Z),
+              color = new Vector3D<float>(1, 1, 1),
+              //Flip Y for OBJ in Vulkan
+              textCoord = new Vector2D<float>(texture.X, 1.0f - texture.Y)
+            };
+
+            if (vertexMap.TryGetValue(vertex, out var meshIndex))
+            {
+              indices.Add(meshIndex);
+            }
+            else
+            {
+              indices.Add((uint)vertices.Count);
+              vertexMap[vertex] = (uint)vertices.Count;
+              vertices.Add(vertex);
+            }
+          }
+        }
+      }
+
+      for (int c = 0; c < node->MNumChildren; c++)
+      {
+        VisitSceneNode(node->MChildren[c]);
+      }
+    }
+  }
+
   private void CreateTextureImage()
   {
-    using var img = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>("Assets/texture.jpg");
+    using var img = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(TEXTURE_PATH);
 
     ulong imageSize = (ulong)(img.Width * img.Height * img.PixelType.BitsPerPixel / 8);
 
@@ -760,7 +810,7 @@ public unsafe class Application
 
   private void CreateVertexBuffer()
   {
-    ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices.Length);
+    ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
 
     Buffer stagingBuffer = default;
     DeviceMemory stagingBufferMemory = default;
@@ -781,7 +831,7 @@ public unsafe class Application
 
   private void CreateIndexBuffer()
   {
-    ulong bufferSize = (ulong)(Unsafe.SizeOf<ushort>() * indices.Length);
+    ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
     Buffer stagingBuffer = default;
     DeviceMemory stagingBufferMemory = default;
@@ -789,7 +839,7 @@ public unsafe class Application
 
     void* data;
     vk!.MapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    indices.AsSpan().CopyTo(new Span<ushort>(data, indices.Length));
+    indices.AsSpan().CopyTo(new Span<uint>(data, indices.Length));
     vk!.UnmapMemory(device, stagingBufferMemory);
 
     CreateBuffer(bufferSize, BufferUsageFlags.TransferDstBit | BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.DeviceLocalBit, ref indexBuffer, ref indexBufferMemory);
@@ -1158,11 +1208,11 @@ public unsafe class Application
         vk!.CmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersPtr, offsetsPtr);
       }
 
-      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, IndexType.Uint16);
+      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, IndexType.Uint32);
 
       vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
 
-      vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices.Length, 1, 0, 0, 0);
+      vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
 
       vk!.CmdEndRenderPass(commandBuffers[i]);
 
@@ -1188,8 +1238,8 @@ public unsafe class Application
   private void CreateGraphicsPipeline()
   {
     var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-    var vertShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
-    var fragShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
+    var vertShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
+    var fragShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
 
     var vertShaderModule = CreateShaderModule(vertShaderCode);
     var fragShaderModule = CreateShaderModule(fragShaderCode);
