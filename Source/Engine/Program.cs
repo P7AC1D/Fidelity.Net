@@ -2,7 +2,7 @@
 
 try
 {
-  using var application = new Application();
+  var application = new Application();
   application.Run();
 }
 catch (Exception ex)
