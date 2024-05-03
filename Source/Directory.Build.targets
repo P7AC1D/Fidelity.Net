@@ -1,12 +1,17 @@
 <Project>
 	<ItemGroup>
-		<VertexShader Include="**/*.vert" />
-		<FragmentShader Include="**/*.frag" />
+		<VertexShader Include="**\*.vert" />
+		<FragmentShader Include="**\*.frag" />
+		<AssetFiles Include="..\..\Assets\**\*.*" />
 	</ItemGroup>
 	
 	<Target Name="BuildVulkanShader" AfterTargets="Build">
 		<MakeDir Directories="$(TargetDir)$(ShaderOutputPath)" Condition="!Exists('$(TargetDir)$(ShaderOutputPath)')"  />
 		<Exec Command="&quot;$(VulkanBinPath)\$(GLSLC)&quot; &quot;%(VertexShader.FullPath)&quot; -o &quot;$(TargetDir)$(ShaderOutputPath)\%(VertexShader.Filename)-vert.spv&quot;" Condition="'@(VertexShader)'!=''" />
 		<Exec Command="&quot;$(VulkanBinPath)\$(GLSLC)&quot; &quot;%(FragmentShader.FullPath)&quot; -o &quot;$(TargetDir)$(ShaderOutputPath)\%(FragmentShader.Filename)-frag.spv&quot;" Condition="'@(FragmentShader)'!=''"/>
+	</Target>
+	<Target Name="CopyAssetFiles" AfterTargets="Build">
+		<MakeDir Directories="$(TargetDir)\Assets" Condition="!Exists('$(TargetDir)\Assets')"  />
+		<Copy SourceFiles="@(AssetFiles)" DestinationFolder="$(TargetDir)\Assets" SkipUnchangedFiles="true"/>
 	</Target>
 </Project>
