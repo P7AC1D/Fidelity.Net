@@ -102,6 +102,7 @@ public unsafe class Application
   private SurfaceKHR surface;
 
   private PhysicalDevice physicalDevice;
+  private SampleCountFlags msaaSamples = SampleCountFlags.Count1Bit;
   private Device device;
 
   private Queue graphicsQueue;
@@ -140,6 +141,10 @@ public unsafe class Application
 
   private CommandPool commandPool;
   private CommandBuffer[]? commandBuffers;
+
+  private Image colorImage;
+  private DeviceMemory colorImageMemory;
+  private ImageView colorImageView;
 
   private Image depthImage;
   private DeviceMemory depthImageMemory;
@@ -221,6 +226,7 @@ public unsafe class Application
     CreateImageViews();
     CreateRenderPass();
     CreateGraphicsPipeline();
+    CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
     CreateUniformBuffers();
@@ -336,6 +342,10 @@ public unsafe class Application
     vk!.DestroyImage(device, depthImage, null);
     vk!.FreeMemory(device, depthImageMemory, null);
 
+    vk!.DestroyImageView(device, colorImageView, null);
+    vk!.DestroyImage(device, colorImage, null);
+    vk!.FreeMemory(device, colorImageMemory, null);
+
     foreach (var framebuffer in swapChainFramebuffers!)
     {
       vk!.DestroyFramebuffer(device, framebuffer, null);
@@ -423,6 +433,7 @@ public unsafe class Application
     CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
     CreateCommandPool();
+    CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
     CreateTextureImage();
@@ -561,7 +572,7 @@ public unsafe class Application
     img.CopyPixelDataTo(new Span<byte>(data, (int)imageSize));
     vk!.UnmapMemory(device, stagingBufferMemory);
 
-    CreateImage((uint)img.Width, (uint)img.Height, mipLevels, Format.R8G8B8A8Srgb, ImageTiling.Optimal, ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref textureImage, ref textureImageMemory);
+    CreateImage((uint)img.Width, (uint)img.Height, mipLevels, SampleCountFlags.Count1Bit, Format.R8G8B8A8Srgb, ImageTiling.Optimal, ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref textureImage, ref textureImageMemory);
 
     TransitionImageLayout(textureImage, Format.R8G8B8A8Srgb, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels);
     CopyBufferToImage(stagingBuffer, textureImage, (uint)img.Width, (uint)img.Height);
@@ -571,6 +582,24 @@ public unsafe class Application
     vk!.FreeMemory(device, stagingBufferMemory, null);
 
     GenerateMipMaps(textureImage, Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels);
+  }
+
+  private SampleCountFlags GetMaxUsableSampleCount()
+  {
+    vk!.GetPhysicalDeviceProperties(physicalDevice, out var physicalDeviceProperties);
+
+    var counts = physicalDeviceProperties.Limits.FramebufferColorSampleCounts & physicalDeviceProperties.Limits.FramebufferDepthSampleCounts;
+
+    return counts switch
+    {
+      var c when (c & SampleCountFlags.Count64Bit) != 0 => SampleCountFlags.Count64Bit,
+      var c when (c & SampleCountFlags.Count32Bit) != 0 => SampleCountFlags.Count32Bit,
+      var c when (c & SampleCountFlags.Count16Bit) != 0 => SampleCountFlags.Count16Bit,
+      var c when (c & SampleCountFlags.Count8Bit) != 0 => SampleCountFlags.Count8Bit,
+      var c when (c & SampleCountFlags.Count4Bit) != 0 => SampleCountFlags.Count4Bit,
+      var c when (c & SampleCountFlags.Count2Bit) != 0 => SampleCountFlags.Count2Bit,
+      _ => SampleCountFlags.Count1Bit
+    };
   }
 
   private void GenerateMipMaps(Image image, Format imageFormat, uint width, uint height, uint mipLevels)
@@ -751,7 +780,7 @@ public unsafe class Application
     return imageView;
   }
 
-  private void CreateImage(uint width, uint height, uint mipLevels, Format format, ImageTiling tiling, ImageUsageFlags usage, MemoryPropertyFlags properties, ref Image image, ref DeviceMemory imageMemory)
+  private void CreateImage(uint width, uint height, uint mipLevels, SampleCountFlags numSamples, Format format, ImageTiling tiling, ImageUsageFlags usage, MemoryPropertyFlags properties, ref Image image, ref DeviceMemory imageMemory)
   {
     ImageCreateInfo imageInfo = new()
     {
@@ -769,7 +798,7 @@ public unsafe class Application
       Tiling = tiling,
       InitialLayout = ImageLayout.Undefined,
       Usage = usage,
-      Samples = SampleCountFlags.Count1Bit,
+      Samples = numSamples,
       SharingMode = SharingMode.Exclusive,
     };
 
@@ -1441,7 +1470,7 @@ public unsafe class Application
       {
         SType = StructureType.PipelineMultisampleStateCreateInfo,
         SampleShadingEnable = false,
-        RasterizationSamples = SampleCountFlags.Count1Bit,
+        RasterizationSamples = msaaSamples,
       };
 
       PipelineDepthStencilStateCreateInfo depthStencil = new()
@@ -1523,24 +1552,36 @@ public unsafe class Application
     AttachmentDescription colorAttachment = new()
     {
       Format = swapChainImageFormat,
-      Samples = SampleCountFlags.Count1Bit,
+      Samples = msaaSamples,
       LoadOp = AttachmentLoadOp.Clear,
       StoreOp = AttachmentStoreOp.Store,
       StencilLoadOp = AttachmentLoadOp.DontCare,
       InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.PresentSrcKhr,
+      FinalLayout = ImageLayout.ColorAttachmentOptimal,
     };
 
     AttachmentDescription depthAttachment = new()
     {
       Format = FindDepthFormat(),
-      Samples = SampleCountFlags.Count1Bit,
+      Samples = msaaSamples,
       LoadOp = AttachmentLoadOp.Clear,
       StoreOp = AttachmentStoreOp.DontCare,
       StencilLoadOp = AttachmentLoadOp.DontCare,
       StencilStoreOp = AttachmentStoreOp.DontCare,
       InitialLayout = ImageLayout.Undefined,
       FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
+    };
+
+    AttachmentDescription colorAttachmentResolve = new()
+    {
+      Format = swapChainImageFormat,
+      Samples = SampleCountFlags.Count1Bit,
+      LoadOp = AttachmentLoadOp.DontCare,
+      StoreOp = AttachmentStoreOp.Store,
+      StencilLoadOp = AttachmentLoadOp.DontCare,
+      StencilStoreOp = AttachmentStoreOp.DontCare,
+      InitialLayout = ImageLayout.Undefined,
+      FinalLayout = ImageLayout.PresentSrcKhr,
     };
 
     AttachmentReference colorAttachmentRef = new()
@@ -1555,12 +1596,19 @@ public unsafe class Application
       Layout = ImageLayout.DepthStencilAttachmentOptimal,
     };
 
+    AttachmentReference colorAttachmentResolveRef = new()
+    {
+      Attachment = 2,
+      Layout = ImageLayout.ColorAttachmentOptimal,
+    };
+
     SubpassDescription subpass = new()
     {
       PipelineBindPoint = PipelineBindPoint.Graphics,
       ColorAttachmentCount = 1,
       PColorAttachments = &colorAttachmentRef,
       PDepthStencilAttachment = &depthAttachmentRef,
+      PResolveAttachments = &colorAttachmentResolveRef,
     };
 
     SubpassDependency dependency = new()
@@ -1573,7 +1621,7 @@ public unsafe class Application
       DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
     };
 
-    var attachments = new[] { colorAttachment, depthAttachment };
+    var attachments = new[] { colorAttachment, depthAttachment, colorAttachmentResolve };
 
     fixed (AttachmentDescription* attachmentsPtr = attachments)
     {
@@ -1638,6 +1686,7 @@ public unsafe class Application
       if (IsDeviceSuitable(device))
       {
         physicalDevice = device;
+        msaaSamples = GetMaxUsableSampleCount();
         break;
       }
     }
@@ -1852,7 +1901,7 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImageViews.Length; i++)
     {
-      var attachments = new[] { swapChainImageViews[i], depthImageView };
+      var attachments = new[] { colorImageView, depthImageView, swapChainImageViews[i] };
 
       fixed (ImageView* attachmentsPtr = attachments)
       {
@@ -1875,11 +1924,19 @@ public unsafe class Application
     }
   }
 
+  private void CreateColorResources()
+  {
+    Format colorFormat = swapChainImageFormat;
+
+    CreateImage(swapChainExtent.Width, swapChainExtent.Height, 1, msaaSamples, colorFormat, ImageTiling.Optimal, ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref colorImage, ref colorImageMemory);
+    colorImageView = CreateImageView(colorImage, colorFormat, ImageAspectFlags.ColorBit, 1);
+  }
+
   private void CreateDepthResources()
   {
     Format depthFormat = FindDepthFormat();
 
-    CreateImage(swapChainExtent.Width, swapChainExtent.Height, 1, depthFormat, ImageTiling.Optimal, ImageUsageFlags.DepthStencilAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref depthImage, ref depthImageMemory);
+    CreateImage(swapChainExtent.Width, swapChainExtent.Height, 1, msaaSamples, depthFormat, ImageTiling.Optimal, ImageUsageFlags.DepthStencilAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref depthImage, ref depthImageMemory);
     depthImageView = CreateImageView(depthImage, depthFormat, ImageAspectFlags.DepthBit, 1);
   }
 
