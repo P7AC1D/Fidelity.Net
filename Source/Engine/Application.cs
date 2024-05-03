@@ -27,7 +27,7 @@ struct QueueFamilyIndices
 
 struct Vertex
 {
-  public Vector2D<float> pos;
+  public Vector3D<float> pos;
   public Vector3D<float> color;
 
   public Vector2D<float> textCoord;
@@ -52,7 +52,7 @@ struct Vertex
       {
           Binding = 0,
           Location = 0,
-          Format = Format.R32G32Sfloat,
+          Format = Format.R32G32B32Sfloat,
           Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(pos)),
       },
       new VertexInputAttributeDescription()
@@ -140,6 +140,10 @@ public unsafe class Application
   private CommandPool commandPool;
   private CommandBuffer[]? commandBuffers;
 
+  private Image depthImage;
+  private DeviceMemory depthImageMemory;
+  private ImageView depthImageView;
+
   private Semaphore[]? imageAvailableSemaphores;
   private Semaphore[]? renderFinishedSemaphores;
   private Fence[]? inFlightFences;
@@ -150,17 +154,23 @@ public unsafe class Application
   const int MAX_FRAMES_IN_FLIGHT = 2;
 
   private Vertex[] vertices = new Vertex[]
-    {
-        new Vertex { pos = new Vector2D<float>(-0.5f,-0.5f), color = new Vector3D<float>(1.0f, 0.0f, 0.0f), textCoord = new Vector2D<float>(1.0f, 0.0f) },
-        new Vertex { pos = new Vector2D<float>(0.5f,-0.5f), color = new Vector3D<float>(0.0f, 1.0f, 0.0f), textCoord = new Vector2D<float>(0.0f, 0.0f) },
-        new Vertex { pos = new Vector2D<float>(0.5f,0.5f), color = new Vector3D<float>(0.0f, 0.0f, 1.0f), textCoord = new Vector2D<float>(0.0f, 1.0f) },
-        new Vertex { pos = new Vector2D<float>(-0.5f,0.5f), color = new Vector3D<float>(1.0f, 1.0f, 1.0f), textCoord = new Vector2D<float>(1.0f, 1.0f) },
-    };
+  {
+    new Vertex { pos = new Vector3D<float>(-0.5f,-0.5f, 0.0f), color = new Vector3D<float>(1.0f, 0.0f, 0.0f), textCoord = new Vector2D<float>(1.0f, 0.0f) },
+    new Vertex { pos = new Vector3D<float>(0.5f,-0.5f, 0.0f), color = new Vector3D<float>(0.0f, 1.0f, 0.0f), textCoord = new Vector2D<float>(0.0f, 0.0f) },
+    new Vertex { pos = new Vector3D<float>(0.5f,0.5f, 0.0f), color = new Vector3D<float>(0.0f, 0.0f, 1.0f), textCoord = new Vector2D<float>(0.0f, 1.0f) },
+    new Vertex { pos = new Vector3D<float>(-0.5f,0.5f, 0.0f), color = new Vector3D<float>(1.0f, 1.0f, 1.0f), textCoord = new Vector2D<float>(1.0f, 1.0f) },
 
-  private ushort[] indices =
-  [
-      0, 1, 2, 2, 3, 0
-  ];
+    new Vertex { pos = new Vector3D<float>(-0.5f,-0.5f, -0.5f), color = new Vector3D<float>(1.0f, 0.0f, 0.0f), textCoord = new Vector2D<float>(1.0f, 0.0f) },
+    new Vertex { pos = new Vector3D<float>(0.5f,-0.5f, -0.5f), color = new Vector3D<float>(0.0f, 1.0f, 0.0f), textCoord = new Vector2D<float>(0.0f, 0.0f) },
+    new Vertex { pos = new Vector3D<float>(0.5f,0.5f, -0.5f), color = new Vector3D<float>(0.0f, 0.0f, 1.0f), textCoord = new Vector2D<float>(0.0f, 1.0f) },
+    new Vertex { pos = new Vector3D<float>(-0.5f,0.5f, -0.5f), color = new Vector3D<float>(1.0f, 1.0f, 1.0f), textCoord = new Vector2D<float>(1.0f, 1.0f) },
+  };
+
+  private ushort[] indices = new ushort[]
+  {
+    0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
+  };
 
   private readonly string[] deviceExtensions =
     [
@@ -224,6 +234,7 @@ public unsafe class Application
     CreateImageViews();
     CreateRenderPass();
     CreateGraphicsPipeline();
+    CreateDepthResources();
     CreateFramebuffers();
     CreateUniformBuffers();
     CreateDescriptorPool();
@@ -334,6 +345,10 @@ public unsafe class Application
 
   private void CleanUpSwapChain()
   {
+    vk!.DestroyImageView(device, depthImageView, null);
+    vk!.DestroyImage(device, depthImage, null);
+    vk!.FreeMemory(device, depthImageMemory, null);
+
     foreach (var framebuffer in swapChainFramebuffers!)
     {
       vk!.DestroyFramebuffer(device, framebuffer, null);
@@ -420,8 +435,9 @@ public unsafe class Application
     CreateRenderPass();
     CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
-    CreateFramebuffers();
     CreateCommandPool();
+    CreateDepthResources();
+    CreateFramebuffers();
     CreateTextureImage();
     CreateTextureImageView();
     CreateTextureSampler();
@@ -506,7 +522,7 @@ public unsafe class Application
 
   private void CreateTextureImageView()
   {
-    textureImageView = CreateImageView(textureImage, Format.R8G8B8A8Srgb);
+    textureImageView = CreateImageView(textureImage, Format.R8G8B8A8Srgb, ImageAspectFlags.ColorBit);
   }
 
   private void CreateTextureSampler()
@@ -539,7 +555,7 @@ public unsafe class Application
     }
   }
 
-  private ImageView CreateImageView(Image image, Format format)
+  private ImageView CreateImageView(Image image, Format format, ImageAspectFlags aspectFlags)
   {
     ImageViewCreateInfo createInfo = new()
     {
@@ -556,7 +572,7 @@ public unsafe class Application
       //    },
       SubresourceRange =
                 {
-                    AspectMask = ImageAspectFlags.ColorBit,
+                    AspectMask = aspectFlags,
                     BaseMipLevel = 0,
                     LevelCount = 1,
                     BaseArrayLayer = 0,
@@ -1110,15 +1126,26 @@ public unsafe class Application
                 }
       };
 
-      ClearValue clearColor = new()
+      var clearValues = new ClearValue[]
       {
-        Color = new() { Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 },
+        new()
+        {
+            Color = new (){ Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 },
+        },
+        new()
+        {
+            DepthStencil = new () { Depth = 1, Stencil = 0 }
+        }
       };
 
-      renderPassInfo.ClearValueCount = 1;
-      renderPassInfo.PClearValues = &clearColor;
 
-      vk!.CmdBeginRenderPass(commandBuffers[i], &renderPassInfo, SubpassContents.Inline);
+      fixed (ClearValue* clearValuesPtr = clearValues)
+      {
+        renderPassInfo.ClearValueCount = (uint)clearValues.Length;
+        renderPassInfo.PClearValues = clearValuesPtr;
+
+        vk!.CmdBeginRenderPass(commandBuffers[i], &renderPassInfo, SubpassContents.Inline);
+      }
 
       vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
 
@@ -1154,15 +1181,15 @@ public unsafe class Application
     for (int i = 0; i < swapChainImages.Length; i++)
     {
 
-      swapChainImageViews[i] = CreateImageView(swapChainImages[i], swapChainImageFormat);
+      swapChainImageViews[i] = CreateImageView(swapChainImages[i], swapChainImageFormat, ImageAspectFlags.ColorBit);
     }
   }
 
   private void CreateGraphicsPipeline()
   {
     var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-    var vertShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/TextureMapping-vert.spv");
-    var fragShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/TextureMapping-frag.spv");
+    var vertShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
+    var fragShaderCode = File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
 
     var vertShaderModule = CreateShaderModule(vertShaderCode);
     var fragShaderModule = CreateShaderModule(fragShaderCode);
@@ -1256,6 +1283,16 @@ public unsafe class Application
         RasterizationSamples = SampleCountFlags.Count1Bit,
       };
 
+      PipelineDepthStencilStateCreateInfo depthStencil = new()
+      {
+        SType = StructureType.PipelineDepthStencilStateCreateInfo,
+        DepthTestEnable = true,
+        DepthWriteEnable = true,
+        DepthCompareOp = CompareOp.Less,
+        DepthBoundsTestEnable = false,
+        StencilTestEnable = false,
+      };
+
       PipelineColorBlendAttachmentState colorBlendAttachment = new()
       {
         ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
@@ -1299,6 +1336,7 @@ public unsafe class Application
         PViewportState = &viewportState,
         PRasterizationState = &rasterizer,
         PMultisampleState = &multisampling,
+        PDepthStencilState = &depthStencil,
         PColorBlendState = &colorBlending,
         Layout = pipelineLayout,
         RenderPass = renderPass,
@@ -1332,10 +1370,28 @@ public unsafe class Application
       FinalLayout = ImageLayout.PresentSrcKhr,
     };
 
+    AttachmentDescription depthAttachment = new()
+    {
+      Format = FindDepthFormat(),
+      Samples = SampleCountFlags.Count1Bit,
+      LoadOp = AttachmentLoadOp.Clear,
+      StoreOp = AttachmentStoreOp.DontCare,
+      StencilLoadOp = AttachmentLoadOp.DontCare,
+      StencilStoreOp = AttachmentStoreOp.DontCare,
+      InitialLayout = ImageLayout.Undefined,
+      FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
+    };
+
     AttachmentReference colorAttachmentRef = new()
     {
       Attachment = 0,
       Layout = ImageLayout.ColorAttachmentOptimal,
+    };
+
+    AttachmentReference depthAttachmentRef = new()
+    {
+      Attachment = 1,
+      Layout = ImageLayout.DepthStencilAttachmentOptimal,
     };
 
     SubpassDescription subpass = new()
@@ -1343,20 +1399,38 @@ public unsafe class Application
       PipelineBindPoint = PipelineBindPoint.Graphics,
       ColorAttachmentCount = 1,
       PColorAttachments = &colorAttachmentRef,
+      PDepthStencilAttachment = &depthAttachmentRef,
     };
 
-    RenderPassCreateInfo renderPassInfo = new()
+    SubpassDependency dependency = new()
     {
-      SType = StructureType.RenderPassCreateInfo,
-      AttachmentCount = 1,
-      PAttachments = &colorAttachment,
-      SubpassCount = 1,
-      PSubpasses = &subpass,
+      SrcSubpass = Vk.SubpassExternal,
+      DstSubpass = 0,
+      SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+      SrcAccessMask = 0,
+      DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
+      DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
     };
 
-    if (vk!.CreateRenderPass(device, renderPassInfo, null, out renderPass) != Result.Success)
+    var attachments = new[] { colorAttachment, depthAttachment };
+
+    fixed (AttachmentDescription* attachmentsPtr = attachments)
     {
-      throw new Exception("failed to create render pass!");
+      RenderPassCreateInfo renderPassInfo = new()
+      {
+        SType = StructureType.RenderPassCreateInfo,
+        AttachmentCount = (uint)attachments.Length,
+        PAttachments = attachmentsPtr,
+        SubpassCount = 1,
+        PSubpasses = &subpass,
+        DependencyCount = 1,
+        PDependencies = &dependency,
+      };
+
+      if (vk!.CreateRenderPass(device, renderPassInfo, null, out renderPass) != Result.Success)
+      {
+        throw new Exception("failed to create render pass!");
+      }
     }
   }
 
@@ -1617,24 +1691,59 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImageViews.Length; i++)
     {
-      var attachment = swapChainImageViews[i];
+      var attachments = new[] { swapChainImageViews[i], depthImageView };
 
-      FramebufferCreateInfo framebufferInfo = new()
+      fixed (ImageView* attachmentsPtr = attachments)
       {
-        SType = StructureType.FramebufferCreateInfo,
-        RenderPass = renderPass,
-        AttachmentCount = 1,
-        PAttachments = &attachment,
-        Width = swapChainExtent.Width,
-        Height = swapChainExtent.Height,
-        Layers = 1,
-      };
+        FramebufferCreateInfo framebufferInfo = new()
+        {
+          SType = StructureType.FramebufferCreateInfo,
+          RenderPass = renderPass,
+          AttachmentCount = (uint)attachments.Length,
+          PAttachments = attachmentsPtr,
+          Width = swapChainExtent.Width,
+          Height = swapChainExtent.Height,
+          Layers = 1,
+        };
 
-      if (vk!.CreateFramebuffer(device, framebufferInfo, null, out swapChainFramebuffers[i]) != Result.Success)
-      {
-        throw new Exception("failed to create framebuffer!");
+        if (vk!.CreateFramebuffer(device, framebufferInfo, null, out swapChainFramebuffers[i]) != Result.Success)
+        {
+          throw new Exception("failed to create framebuffer!");
+        }
       }
     }
+  }
+
+  private void CreateDepthResources()
+  {
+    Format depthFormat = FindDepthFormat();
+
+    CreateImage(swapChainExtent.Width, swapChainExtent.Height, depthFormat, ImageTiling.Optimal, ImageUsageFlags.DepthStencilAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref depthImage, ref depthImageMemory);
+    depthImageView = CreateImageView(depthImage, depthFormat, ImageAspectFlags.DepthBit);
+  }
+
+  private Format FindSupportedFormat(IEnumerable<Format> candidates, ImageTiling tiling, FormatFeatureFlags features)
+  {
+    foreach (var format in candidates)
+    {
+      vk!.GetPhysicalDeviceFormatProperties(physicalDevice, format, out var props);
+
+      if (tiling == ImageTiling.Linear && (props.LinearTilingFeatures & features) == features)
+      {
+        return format;
+      }
+      else if (tiling == ImageTiling.Optimal && (props.OptimalTilingFeatures & features) == features)
+      {
+        return format;
+      }
+    }
+
+    throw new Exception("failed to find supported format!");
+  }
+
+  private Format FindDepthFormat()
+  {
+    return FindSupportedFormat(new[] { Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint }, ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
   }
 
   private string[] GetRequiredExtensions()
