@@ -158,8 +158,8 @@ public unsafe class Application
   private bool frameBufferResized = false;
 
   const int MAX_FRAMES_IN_FLIGHT = 2;
-  const string MODEL_PATH = @"Assets\viking_room.obj";
-  const string TEXTURE_PATH = @"Assets\viking_room.png";
+  const string MODEL_PATH = @"Assets/viking_room.obj";
+  const string TEXTURE_PATH = @"Assets/viking_room.png";
 
   private Vertex[] vertices;
   private uint[] indices;
@@ -497,7 +497,8 @@ public unsafe class Application
   private void LoadModel()
   {
     using var assimp = Assimp.GetApi();
-    var scene = assimp.ImportFile(MODEL_PATH, (uint)PostProcessPreset.TargetRealTimeMaximumQuality);
+    var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+    var scene = assimp.ImportFile($"{assemblyPath}/{MODEL_PATH}", (uint)PostProcessPreset.TargetRealTimeMaximumQuality);
 
     var vertexMap = new Dictionary<Vertex, uint>();
     var vertices = new List<Vertex>();
@@ -558,7 +559,8 @@ public unsafe class Application
 
   private void CreateTextureImage()
   {
-    using var img = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(TEXTURE_PATH);
+    var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+    using var img = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>($"{assemblyPath}/{TEXTURE_PATH}");
 
     ulong imageSize = (ulong)(img.Width * img.Height * img.PixelType.BitsPerPixel / 8);
     mipLevels = (uint)(Math.Floor(Math.Log2(Math.Max(img.Width, img.Height))) + 1);
