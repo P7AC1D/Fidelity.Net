@@ -953,7 +953,7 @@ public unsafe class Application
     staging.WriteData<Vertex>(vertices);
 
     vertexBuffer = new GpuBuffer(device, physicalDevice);
-    vertexBuffer.Allocate(GpuBufferType.Staging, bufferSize);
+    vertexBuffer.Allocate(GpuBufferType.Vertex, bufferSize);
     staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
