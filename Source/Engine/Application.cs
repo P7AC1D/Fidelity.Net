@@ -122,10 +122,7 @@ public unsafe class Application
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
 
-  private Buffer vertexBuffer;
-  private DeviceMemory vertexBufferMemory;
-  private Buffer indexBuffer;
-  private DeviceMemory indexBufferMemory;
+  private GpuBuffer vertexBuffer, indexBuffer;
 
   private Buffer[]? uniformBuffers;
   private DeviceMemory[]? uniformBuffersMemory;
@@ -390,11 +387,8 @@ public unsafe class Application
 
     vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
 
-    vk!.DestroyBuffer(device, indexBuffer, null);
-    vk!.FreeMemory(device, indexBufferMemory, null);
-
-    vk!.DestroyBuffer(device, vertexBuffer, null);
-    vk!.FreeMemory(device, vertexBufferMemory, null);
+    vertexBuffer?.Dispose();
+    indexBuffer?.Dispose();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -954,42 +948,26 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
 
-    Buffer stagingBuffer = default;
-    DeviceMemory stagingBufferMemory = default;
-    CreateBuffer(bufferSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, ref stagingBuffer, ref stagingBufferMemory);
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
+    staging.Allocate(GpuBufferType.Staging, bufferSize);
+    staging.WriteData<Vertex>(vertices);
 
-    void* data;
-    vk!.MapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    vertices.AsSpan().CopyTo(new Span<Vertex>(data, vertices.Length));
-    vk!.UnmapMemory(device, stagingBufferMemory);
-
-    CreateBuffer(bufferSize, BufferUsageFlags.TransferDstBit | BufferUsageFlags.VertexBufferBit, MemoryPropertyFlags.DeviceLocalBit, ref vertexBuffer, ref vertexBufferMemory);
-
-    CopyBuffer(stagingBuffer, vertexBuffer, bufferSize);
-
-    vk!.DestroyBuffer(device, stagingBuffer, null);
-    vk!.FreeMemory(device, stagingBufferMemory, null);
+    vertexBuffer = new GpuBuffer(device, physicalDevice);
+    vertexBuffer.Allocate(GpuBufferType.Staging, bufferSize);
+    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private void CreateIndexBuffer()
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
-    Buffer stagingBuffer = default;
-    DeviceMemory stagingBufferMemory = default;
-    CreateBuffer(bufferSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, ref stagingBuffer, ref stagingBufferMemory);
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
+    staging.Allocate(GpuBufferType.Staging, bufferSize);
+    staging.WriteData<uint>(indices);
 
-    void* data;
-    vk!.MapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-    indices.AsSpan().CopyTo(new Span<uint>(data, indices.Length));
-    vk!.UnmapMemory(device, stagingBufferMemory);
-
-    CreateBuffer(bufferSize, BufferUsageFlags.TransferDstBit | BufferUsageFlags.IndexBufferBit, MemoryPropertyFlags.DeviceLocalBit, ref indexBuffer, ref indexBufferMemory);
-
-    CopyBuffer(stagingBuffer, indexBuffer, bufferSize);
-
-    vk!.DestroyBuffer(device, stagingBuffer, null);
-    vk!.FreeMemory(device, stagingBufferMemory, null);
+    indexBuffer = new GpuBuffer(device, physicalDevice);
+    indexBuffer.Allocate(GpuBufferType.Index, bufferSize);
+    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private void CreateUniformBuffers()
@@ -1341,7 +1319,7 @@ public unsafe class Application
 
       vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
 
-      var vertexBuffers = new Buffer[] { vertexBuffer };
+      var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
       var offsets = new ulong[] { 0 };
 
       fixed (ulong* offsetsPtr = offsets)
@@ -1350,7 +1328,7 @@ public unsafe class Application
         vk!.CmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersPtr, offsetsPtr);
       }
 
-      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, IndexType.Uint32);
+      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
       vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
 
