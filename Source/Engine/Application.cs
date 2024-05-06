@@ -1088,7 +1088,6 @@ public unsafe class Application
         vk!.UpdateDescriptorSets(device, (uint)descriptorWrites.Length, descriptorWritesPtr, 0, null);
       }
     }
-
   }
 
   private void UpdateUniformBuffer(uint currentImage)

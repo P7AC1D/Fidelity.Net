@@ -1,3 +1,4 @@
+using System.Drawing;
 using System.Runtime.CompilerServices;
 using System.Security.Cryptography;
 using Silk.NET.Vulkan;
@@ -12,6 +13,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
   private DeviceMemory memory = default;
 
   public bool Allocated { get; private set; } = false;
+  public ulong SizeBytes { get; private set; } = 0;
   public Buffer Buffer { get { return buffer; } }
 
   public void Allocate(GpuBufferType gpuBufferType, ulong sizeBytes)
@@ -58,6 +60,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.BindBufferMemory(device, buffer, memory, 0);
 
     Allocated = true;
+    SizeBytes = sizeBytes;
   }
 
   public void WriteData<T>(T data) where T : struct
@@ -68,6 +71,11 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     }
 
     ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
+    if (SizeBytes < bufferSize)
+    {
+      throw new Exception($"Insufficient memory allocated. Allocated: {SizeBytes} bytes. Requested: {bufferSize} bytes.");
+    }
+
     void* mappedMemory = MapRange(0, bufferSize);
     new Span<T>(mappedMemory, 1)[0] = data;
     Unmap();
@@ -86,6 +94,11 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     }
 
     ulong bufferSize = (ulong)(Unsafe.SizeOf<T>() * data!.Length);
+    if (SizeBytes < bufferSize)
+    {
+      throw new Exception($"Insufficient memory allocated. Allocated: {SizeBytes} bytes. Requested: {bufferSize} bytes.");
+    }
+
     void* mappedMemory = MapRange(0, bufferSize);
 
     data.AsSpan().CopyTo(new Span<T>(mappedMemory, data.Length));
