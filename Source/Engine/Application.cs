@@ -123,9 +123,7 @@ public unsafe class Application
   private Pipeline graphicsPipeline;
 
   private GpuBuffer vertexBuffer, indexBuffer;
-
-  private Buffer[]? uniformBuffers;
-  private DeviceMemory[]? uniformBuffersMemory;
+  private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
   private DescriptorSet[]? descriptorSets;
@@ -366,8 +364,7 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImages!.Length; i++)
     {
-      vk!.DestroyBuffer(device, uniformBuffers![i], null);
-      vk!.FreeMemory(device, uniformBuffersMemory![i], null);
+      uniformBuffers[i]?.Dispose();
     }
 
     vk!.DestroyDescriptorPool(device, descriptorPool, null);
@@ -950,7 +947,7 @@ public unsafe class Application
 
     using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
     staging.Allocate(GpuBufferType.Staging, bufferSize);
-    staging.WriteData<Vertex>(vertices);
+    staging.WriteDataArray<Vertex>(vertices);
 
     vertexBuffer = new GpuBuffer(device, physicalDevice);
     vertexBuffer.Allocate(GpuBufferType.Vertex, bufferSize);
@@ -963,7 +960,7 @@ public unsafe class Application
 
     using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
     staging.Allocate(GpuBufferType.Staging, bufferSize);
-    staging.WriteData<uint>(indices);
+    staging.WriteDataArray<uint>(indices);
 
     indexBuffer = new GpuBuffer(device, physicalDevice);
     indexBuffer.Allocate(GpuBufferType.Index, bufferSize);
@@ -974,14 +971,13 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
 
-    uniformBuffers = new Buffer[swapChainImages!.Length];
-    uniformBuffersMemory = new DeviceMemory[swapChainImages!.Length];
+    uniformBuffers = new GpuBuffer[swapChainImages!.Length];
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
-      CreateBuffer(bufferSize, BufferUsageFlags.UniformBufferBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, ref uniformBuffers[i], ref uniformBuffersMemory[i]);
+      uniformBuffers[i] = new GpuBuffer(device, physicalDevice);
+      uniformBuffers[i].Allocate(GpuBufferType.Uniform, bufferSize);
     }
-
   }
 
   private void CreateDescriptorPool()
@@ -1050,7 +1046,7 @@ public unsafe class Application
     {
       DescriptorBufferInfo bufferInfo = new()
       {
-        Buffer = uniformBuffers![i],
+        Buffer = uniformBuffers![i].Buffer,
         Offset = 0,
         Range = (ulong)Unsafe.SizeOf<UniformBufferObject>(),
 
@@ -1108,11 +1104,7 @@ public unsafe class Application
     };
     ubo.proj.M22 *= -1;
 
-
-    void* data;
-    vk!.MapMemory(device, uniformBuffersMemory![currentImage], 0, (ulong)Unsafe.SizeOf<UniformBufferObject>(), 0, &data);
-    new Span<UniformBufferObject>(data, 1)[0] = ubo;
-    vk!.UnmapMemory(device, uniformBuffersMemory![currentImage]);
+    uniformBuffers![currentImage].WriteData(ubo);
 
   }
 

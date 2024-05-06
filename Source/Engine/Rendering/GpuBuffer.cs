@@ -5,14 +5,14 @@ using Buffer = Silk.NET.Vulkan.Buffer;
 
 namespace Fidelity;
 
-public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable
+public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable, IGpuBuffer
 {
   private readonly Vk vk = Vk.GetApi();
   private Buffer buffer = default;
   private DeviceMemory memory = default;
 
   public bool Allocated { get; private set; } = false;
-  public Buffer Buffer {get { return buffer; } }
+  public Buffer Buffer { get { return buffer; } }
 
   public void Allocate(GpuBufferType gpuBufferType, ulong sizeBytes)
   {
@@ -60,7 +60,20 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     Allocated = true;
   }
 
-  public void WriteData<T>(T[] data) where T : struct
+  public void WriteData<T>(T data) where T : struct
+  {
+    if (!Allocated)
+    {
+      throw new Exception("Cannot write data. Buffer has not been allocated yet.");
+    }
+
+    ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
+    void* mappedMemory = MapRange(0, bufferSize);
+    new Span<T>(mappedMemory, 1)[0] = data;
+    Unmap();
+  }
+
+  public void WriteDataArray<T>(T[] data) where T : struct
   {
     if (!Allocated)
     {
