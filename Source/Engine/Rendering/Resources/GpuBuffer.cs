@@ -45,7 +45,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     {
       SType = StructureType.MemoryAllocateInfo,
       AllocationSize = memRequirements.Size,
-      MemoryTypeIndex = FindMemoryType(memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
+      MemoryTypeIndex = Utility.FindMemoryType(physicalDevice, memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
     };
 
     fixed (DeviceMemory* bufferMemoryPtr = &memory)
@@ -104,6 +104,32 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     Unmap();
   }
 
+  public void CopyBufferToImage(Buffer buffer, Image image, uint width, uint height, CommandPool commandPool, Queue graphicsQueue)
+  {
+    CommandBuffer commandBuffer = Utility.BeginSingleTimeCommands(commandPool, device);
+
+    BufferImageCopy region = new()
+    {
+      BufferOffset = 0,
+      BufferRowLength = 0,
+      BufferImageHeight = 0,
+      ImageSubresource =
+            {
+                AspectMask = ImageAspectFlags.ColorBit,
+                MipLevel = 0,
+                BaseArrayLayer = 0,
+                LayerCount = 1,
+            },
+      ImageOffset = new Offset3D(0, 0, 0),
+      ImageExtent = new Extent3D(width, height, 1),
+
+    };
+
+    vk!.CmdCopyBufferToImage(commandBuffer, buffer, image, ImageLayout.TransferDstOptimal, 1, region);
+
+    Utility.EndSingleTimeCommands(graphicsQueue, commandBuffer, device, commandPool);
+  }
+
   public void CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
   {
     CommandBufferAllocateInfo allocateInfo = new()
@@ -144,21 +170,6 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.QueueWaitIdle(graphicsQueue);
 
     vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
-  }
-
-  private uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)
-  {
-    vk!.GetPhysicalDeviceMemoryProperties(physicalDevice, out PhysicalDeviceMemoryProperties memProperties);
-
-    for (int i = 0; i < memProperties.MemoryTypeCount; i++)
-    {
-      if ((typeFilter & (1 << i)) != 0 && (memProperties.MemoryTypes[i].PropertyFlags & properties) == properties)
-      {
-        return (uint)i;
-      }
-    }
-
-    throw new Exception("Failed to find suitable memory.");
   }
 
   private void* MapRange(ulong offsetbytes, ulong sizeBytes)

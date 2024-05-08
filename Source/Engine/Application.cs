@@ -130,8 +130,7 @@ public unsafe class Application
   private DescriptorPool descriptorPool;
   private DescriptorSet[]? descriptorSets;
 
-  private Image textureImage;
-  private DeviceMemory textureImageMemory;
+  private Texture texture;
 
   private ImageView textureImageView;
   private Sampler textureSampler;
@@ -567,6 +566,20 @@ public unsafe class Application
     img.CopyPixelDataTo(new Span<byte>(data, (int)imageSize));
     vk!.UnmapMemory(device, stagingBufferMemory);
 
+    texture = new Texture(device, physicalDevice);
+    texture.Allocate(new Extent3D
+      {
+        Width = img.Width,
+        Height = img.Height,
+        Depth = 1
+      },
+      mipLevels,
+      SampleCountFlags.Count1Bit,
+      Format.R8G8B8A8Srgb,
+      ImageTiling.Optimal,
+      ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+      MemoryPropertyFlags.DeviceLocalBit);
+
     CreateImage((uint)img.Width, (uint)img.Height, mipLevels, SampleCountFlags.Count1Bit, Format.R8G8B8A8Srgb, ImageTiling.Optimal, ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref textureImage, ref textureImageMemory);
 
     TransitionImageLayout(textureImage, Format.R8G8B8A8Srgb, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels);
@@ -875,32 +888,6 @@ public unsafe class Application
 
     EndSingleTimeCommands(commandBuffer);
 
-  }
-
-  private void CopyBufferToImage(Buffer buffer, Image image, uint width, uint height)
-  {
-    CommandBuffer commandBuffer = BeginSingleTimeCommands();
-
-    BufferImageCopy region = new()
-    {
-      BufferOffset = 0,
-      BufferRowLength = 0,
-      BufferImageHeight = 0,
-      ImageSubresource =
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                MipLevel = 0,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            },
-      ImageOffset = new Offset3D(0, 0, 0),
-      ImageExtent = new Extent3D(width, height, 1),
-
-    };
-
-    vk!.CmdCopyBufferToImage(commandBuffer, buffer, image, ImageLayout.TransferDstOptimal, 1, region);
-
-    EndSingleTimeCommands(commandBuffer);
   }
 
   private CommandBuffer BeginSingleTimeCommands()
