@@ -1,22 +1,21 @@
-using System.Drawing;
-using System.Runtime.CompilerServices;
-using System.Security.Cryptography;
+using Fidelity.Rendering.Vulkan.Abstractions;
 using Silk.NET.Vulkan;
+using System.Runtime.CompilerServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
-namespace Fidelity;
+namespace Fidelity.Rendering.Vulkan;
 
-public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable, IGpuBuffer
+public unsafe class VkBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable, IGpuBuffer
 {
   private readonly Vk vk = Vk.GetApi();
-  private Buffer buffer = default;
-  private DeviceMemory memory = default;
+  private Buffer buffer;
+  private DeviceMemory memory;
 
   public bool Allocated { get; private set; } = false;
   public ulong SizeBytes { get; private set; } = 0;
   public Buffer Buffer { get { return buffer; } }
 
-  public void Allocate(GpuBufferType gpuBufferType, ulong sizeBytes)
+  public void Allocate(BufferType gpuBufferType, ulong sizeBytes)
   {
     if (Allocated)
     {
@@ -105,7 +104,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     Unmap();
   }
 
-  public void CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
+  public void CopyData(VkBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
   {
     CommandBufferAllocateInfo allocateInfo = new()
     {
@@ -179,27 +178,27 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.UnmapMemory(device, memory);
   }
 
-  private BufferUsageFlags MapBufferUsage(GpuBufferType gpuBufferType)
+  private BufferUsageFlags MapBufferUsage(BufferType gpuBufferType)
   {
     return gpuBufferType switch
     {
-      GpuBufferType.Vertex => BufferUsageFlags.TransferDstBit | BufferUsageFlags.VertexBufferBit,
-      GpuBufferType.Index => BufferUsageFlags.TransferDstBit | BufferUsageFlags.IndexBufferBit,
-      GpuBufferType.Staging => BufferUsageFlags.TransferSrcBit,
-      GpuBufferType.Uniform => BufferUsageFlags.UniformBufferBit,
-      _ => throw new Exception($"Could not map to {nameof(BufferUsageFlags)}. Unsupported {nameof(GpuBufferType)}: {gpuBufferType}."),
+      BufferType.Vertex => BufferUsageFlags.TransferDstBit | BufferUsageFlags.VertexBufferBit,
+      BufferType.Index => BufferUsageFlags.TransferDstBit | BufferUsageFlags.IndexBufferBit,
+      BufferType.Staging => BufferUsageFlags.TransferSrcBit,
+      BufferType.Uniform => BufferUsageFlags.UniformBufferBit,
+      _ => throw new Exception($"Could not map to {nameof(BufferUsageFlags)}. Unsupported {nameof(BufferType)}: {gpuBufferType}."),
     };
   }
 
-  private MemoryPropertyFlags MapMemoryProperty(GpuBufferType gpuBufferType)
+  private MemoryPropertyFlags MapMemoryProperty(BufferType gpuBufferType)
   {
     return gpuBufferType switch
     {
-      GpuBufferType.Vertex => MemoryPropertyFlags.DeviceLocalBit,
-      GpuBufferType.Index => MemoryPropertyFlags.DeviceLocalBit,
-      GpuBufferType.Staging => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
-      GpuBufferType.Uniform => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
-      _ => throw new Exception($"Could not map to {nameof(MemoryPropertyFlags)}. Unsupported {nameof(GpuBufferType)}: {gpuBufferType}."),
+      BufferType.Vertex => MemoryPropertyFlags.DeviceLocalBit,
+      BufferType.Index => MemoryPropertyFlags.DeviceLocalBit,
+      BufferType.Staging => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+      BufferType.Uniform => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
+      _ => throw new Exception($"Could not map to {nameof(MemoryPropertyFlags)}. Unsupported {nameof(BufferType)}: {gpuBufferType}."),
     };
   }
 
