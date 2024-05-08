@@ -1,4 +1,6 @@
+using Fidelity.Rendering.Enums;
 using Fidelity.Rendering.Vulkan;
+using Fidelity.Rendering.Vulkan.Abstractions;
 using Silk.NET.Assimp;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
@@ -123,8 +125,8 @@ public unsafe class Application
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
 
-  private VkBuffer vertexBuffer, indexBuffer;
-  private VkBuffer[] uniformBuffers;
+  private IGpuBuffer vertexBuffer, indexBuffer;
+  private IGpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
   private DescriptorSet[]? descriptorSets;
@@ -365,7 +367,7 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImages!.Length; i++)
     {
-      uniformBuffers[i]?.Dispose();
+      uniformBuffers[i]?.Deallocate();
     }
 
     vk!.DestroyDescriptorPool(device, descriptorPool, null);
@@ -385,8 +387,8 @@ public unsafe class Application
 
     vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
 
-    vertexBuffer?.Dispose();
-    indexBuffer?.Dispose();
+    vertexBuffer?.Deallocate();
+    indexBuffer?.Deallocate();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -946,11 +948,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
 
-    using VkBuffer staging = new VkBuffer(device, physicalDevice);
+    using VkGpuBuffer staging = new VkGpuBuffer(device, physicalDevice);
     staging.Allocate(BufferType.Staging, bufferSize);
     staging.WriteDataArray<Vertex>(vertices);
 
-    vertexBuffer = new VkBuffer(device, physicalDevice);
+    vertexBuffer = new VkGpuBuffer(device, physicalDevice);
     vertexBuffer.Allocate(BufferType.Vertex, bufferSize);
     staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
@@ -959,11 +961,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
-    using VkBuffer staging = new VkBuffer(device, physicalDevice);
+    using VkGpuBuffer staging = new VkGpuBuffer(device, physicalDevice);
     staging.Allocate(BufferType.Staging, bufferSize);
     staging.WriteDataArray<uint>(indices);
 
-    indexBuffer = new VkBuffer(device, physicalDevice);
+    indexBuffer = new VkGpuBuffer(device, physicalDevice);
     indexBuffer.Allocate(BufferType.Index, bufferSize);
     staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
@@ -972,11 +974,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
 
-    uniformBuffers = new VkBuffer[swapChainImages!.Length];
+    uniformBuffers = new VkGpuBuffer[swapChainImages!.Length];
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
-      uniformBuffers[i] = new VkBuffer(device, physicalDevice);
+      uniformBuffers[i] = new VkGpuBuffer(device, physicalDevice);
       uniformBuffers[i].Allocate(BufferType.Uniform, bufferSize);
     }
   }
@@ -1047,7 +1049,7 @@ public unsafe class Application
     {
       DescriptorBufferInfo bufferInfo = new()
       {
-        Buffer = uniformBuffers![i].Buffer,
+        Buffer = (uniformBuffers![i] as VkGpuBuffer)!.Buffer,
         Offset = 0,
         Range = (ulong)Unsafe.SizeOf<UniformBufferObject>(),
 
@@ -1311,7 +1313,7 @@ public unsafe class Application
 
       vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
 
-      var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
+      var vertexBuffers = new Buffer[] { (vertexBuffer as VkGpuBuffer)!.Buffer };
       var offsets = new ulong[] { 0 };
 
       fixed (ulong* offsetsPtr = offsets)
@@ -1320,7 +1322,7 @@ public unsafe class Application
         vk!.CmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersPtr, offsetsPtr);
       }
 
-      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
+      vk!.CmdBindIndexBuffer(commandBuffers[i], (indexBuffer as VkGpuBuffer)!.Buffer, 0, IndexType.Uint32);
 
       vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
 
