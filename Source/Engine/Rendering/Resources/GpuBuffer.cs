@@ -1,12 +1,11 @@
 using Fidelity.Rendering.Enums;
-using Fidelity.Rendering.Vulkan.Abstractions;
 using Silk.NET.Vulkan;
 using System.Runtime.CompilerServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
 
-namespace Fidelity.Rendering.Vulkan;
+namespace Fidelity.Rendering.Resources;
 
-public unsafe class VkGpuBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable, IGpuBuffer
+public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
   private Buffer buffer;
@@ -105,7 +104,7 @@ public unsafe class VkGpuBuffer(Device device, PhysicalDevice physicalDevice) : 
     Unmap();
   }
 
-  public void CopyData(IGpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
+  public void CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
   {
     CommandBufferAllocateInfo allocateInfo = new()
     {
@@ -130,7 +129,7 @@ public unsafe class VkGpuBuffer(Device device, PhysicalDevice physicalDevice) : 
       Size = sizeBytes,
     };
 
-    vk!.CmdCopyBuffer(commandBuffer, Buffer, (destination as VkGpuBuffer)!.Buffer, 1, copyRegion);
+    vk!.CmdCopyBuffer(commandBuffer, Buffer, destination!.Buffer, 1, copyRegion);
 
     vk!.EndCommandBuffer(commandBuffer);
 

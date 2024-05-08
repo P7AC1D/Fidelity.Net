@@ -1,6 +1,5 @@
 using Fidelity.Rendering.Enums;
-using Fidelity.Rendering.Vulkan;
-using Fidelity.Rendering.Vulkan.Abstractions;
+using Fidelity.Rendering.Resources;
 using Silk.NET.Assimp;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
@@ -125,8 +124,8 @@ public unsafe class Application
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
 
-  private IGpuBuffer vertexBuffer, indexBuffer;
-  private IGpuBuffer[] uniformBuffers;
+  private GpuBuffer vertexBuffer, indexBuffer;
+  private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
   private DescriptorSet[]? descriptorSets;
@@ -948,11 +947,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
 
-    using VkGpuBuffer staging = new VkGpuBuffer(device, physicalDevice);
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
     staging.Allocate(BufferType.Staging, bufferSize);
     staging.WriteDataArray<Vertex>(vertices);
 
-    vertexBuffer = new VkGpuBuffer(device, physicalDevice);
+    vertexBuffer = new GpuBuffer(device, physicalDevice);
     vertexBuffer.Allocate(BufferType.Vertex, bufferSize);
     staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
@@ -961,11 +960,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
-    using VkGpuBuffer staging = new VkGpuBuffer(device, physicalDevice);
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
     staging.Allocate(BufferType.Staging, bufferSize);
     staging.WriteDataArray<uint>(indices);
 
-    indexBuffer = new VkGpuBuffer(device, physicalDevice);
+    indexBuffer = new GpuBuffer(device, physicalDevice);
     indexBuffer.Allocate(BufferType.Index, bufferSize);
     staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
@@ -974,11 +973,11 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
 
-    uniformBuffers = new VkGpuBuffer[swapChainImages!.Length];
+    uniformBuffers = new GpuBuffer[swapChainImages!.Length];
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
-      uniformBuffers[i] = new VkGpuBuffer(device, physicalDevice);
+      uniformBuffers[i] = new GpuBuffer(device, physicalDevice);
       uniformBuffers[i].Allocate(BufferType.Uniform, bufferSize);
     }
   }
@@ -1049,7 +1048,7 @@ public unsafe class Application
     {
       DescriptorBufferInfo bufferInfo = new()
       {
-        Buffer = (uniformBuffers![i] as VkGpuBuffer)!.Buffer,
+        Buffer = uniformBuffers![i].Buffer,
         Offset = 0,
         Range = (ulong)Unsafe.SizeOf<UniformBufferObject>(),
 
@@ -1313,7 +1312,7 @@ public unsafe class Application
 
       vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
 
-      var vertexBuffers = new Buffer[] { (vertexBuffer as VkGpuBuffer)!.Buffer };
+      var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
       var offsets = new ulong[] { 0 };
 
       fixed (ulong* offsetsPtr = offsets)
@@ -1322,7 +1321,7 @@ public unsafe class Application
         vk!.CmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersPtr, offsetsPtr);
       }
 
-      vk!.CmdBindIndexBuffer(commandBuffers[i], (indexBuffer as VkGpuBuffer)!.Buffer, 0, IndexType.Uint32);
+      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
       vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
 
