@@ -332,3 +332,4 @@ ASALocalRun/
 # Locally downloaded tools, typically used during builds.
 /tools/
 .DS_Store
+.vscode/settings.json

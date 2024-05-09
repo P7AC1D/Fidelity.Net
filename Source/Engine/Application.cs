@@ -14,6 +14,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
+using Texture = Fidelity.Rendering.Resources.Texture;
 
 namespace Fidelity;
 
@@ -131,20 +132,13 @@ public unsafe class Application
   private DescriptorSet[]? descriptorSets;
 
   private Texture texture;
-
-  private ImageView textureImageView;
   private Sampler textureSampler;
+
+  private Texture colorImage;
+  private Texture depthImage;
 
   private CommandPool commandPool;
   private CommandBuffer[]? commandBuffers;
-
-  private Image colorImage;
-  private DeviceMemory colorImageMemory;
-  private ImageView colorImageView;
-
-  private Image depthImage;
-  private DeviceMemory depthImageMemory;
-  private ImageView depthImageView;
 
   private Semaphore[]? imageAvailableSemaphores;
   private Semaphore[]? renderFinishedSemaphores;
@@ -334,13 +328,9 @@ public unsafe class Application
 
   private void CleanUpSwapChain()
   {
-    vk!.DestroyImageView(device, depthImageView, null);
-    vk!.DestroyImage(device, depthImage, null);
-    vk!.FreeMemory(device, depthImageMemory, null);
-
-    vk!.DestroyImageView(device, colorImageView, null);
-    vk!.DestroyImage(device, colorImage, null);
-    vk!.FreeMemory(device, colorImageMemory, null);
+    depthImage.Dispose();
+    colorImage.Dispose();
+    texture.Dispose();
 
     foreach (var framebuffer in swapChainFramebuffers!)
     {
@@ -365,7 +355,7 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImages!.Length; i++)
     {
-      uniformBuffers[i]?.Deallocate();
+      uniformBuffers[i]?.Dispose();
     }
 
     vk!.DestroyDescriptorPool(device, descriptorPool, null);
@@ -380,13 +370,10 @@ public unsafe class Application
   {
     CleanUpSwapChain();
 
-    vk!.DestroyImage(device, textureImage, null);
-    vk!.FreeMemory(device, textureImageMemory, null);
-
     vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
 
-    vertexBuffer?.Deallocate();
-    indexBuffer?.Deallocate();
+    vertexBuffer?.Dispose();
+    indexBuffer?.Dispose();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -429,7 +416,6 @@ public unsafe class Application
     CreateDepthResources();
     CreateFramebuffers();
     CreateTextureImage();
-    CreateTextureImageView();
     CreateTextureSampler();
     LoadModel();
     CreateVertexBuffer();
@@ -557,20 +543,17 @@ public unsafe class Application
     ulong imageSize = (ulong)(img.Width * img.Height * img.PixelType.BitsPerPixel / 8);
     mipLevels = (uint)(Math.Floor(Math.Log2(Math.Max(img.Width, img.Height))) + 1);
 
-    Buffer stagingBuffer = default;
-    DeviceMemory stagingBufferMemory = default;
-    CreateBuffer(imageSize, BufferUsageFlags.TransferSrcBit, MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit, ref stagingBuffer, ref stagingBufferMemory);
-
-    void* data;
-    vk!.MapMemory(device, stagingBufferMemory, 0, imageSize, 0, &data);
-    img.CopyPixelDataTo(new Span<byte>(data, (int)imageSize));
-    vk!.UnmapMemory(device, stagingBufferMemory);
+    using GpuBuffer stagingBuffer = new GpuBuffer(device, physicalDevice);
+    stagingBuffer.Allocate(BufferType.Staging, imageSize);
+    void* mappedData = stagingBuffer.MapRange(0, imageSize);
+    img.CopyPixelDataTo(new Span<byte>(mappedData, (int)imageSize));
+    stagingBuffer.Unmap();
 
     texture = new Texture(device, physicalDevice);
     texture.Allocate(new Extent3D
       {
-        Width = img.Width,
-        Height = img.Height,
+        Width = (uint)img.Width,
+        Height = (uint)img.Height,
         Depth = 1
       },
       mipLevels,
@@ -578,18 +561,12 @@ public unsafe class Application
       Format.R8G8B8A8Srgb,
       ImageTiling.Optimal,
       ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-      MemoryPropertyFlags.DeviceLocalBit);
+      MemoryPropertyFlags.DeviceLocalBit,
+      ImageAspectFlags.ColorBit);
 
-    CreateImage((uint)img.Width, (uint)img.Height, mipLevels, SampleCountFlags.Count1Bit, Format.R8G8B8A8Srgb, ImageTiling.Optimal, ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit, MemoryPropertyFlags.DeviceLocalBit, ref textureImage, ref textureImageMemory);
-
-    TransitionImageLayout(textureImage, Format.R8G8B8A8Srgb, ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels);
-    CopyBufferToImage(stagingBuffer, textureImage, (uint)img.Width, (uint)img.Height);
-    //Transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL while generating mipmaps
-
-    vk!.DestroyBuffer(device, stagingBuffer, null);
-    vk!.FreeMemory(device, stagingBufferMemory, null);
-
-    GenerateMipMaps(textureImage, Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels);
+    texture.TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue);
+    texture.CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue);
+    texture.GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
   }
 
   private SampleCountFlags GetMaxUsableSampleCount()
@@ -608,116 +585,6 @@ public unsafe class Application
       var c when (c & SampleCountFlags.Count2Bit) != 0 => SampleCountFlags.Count2Bit,
       _ => SampleCountFlags.Count1Bit
     };
-  }
-
-  private void GenerateMipMaps(Image image, Format imageFormat, uint width, uint height, uint mipLevels)
-  {
-    vk!.GetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, out var formatProperties);
-
-    if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.SampledImageFilterLinearBit) == 0)
-    {
-      throw new Exception("texture image format does not support linear blitting!");
-    }
-
-    var commandBuffer = BeginSingleTimeCommands();
-
-    ImageMemoryBarrier barrier = new()
-    {
-      SType = StructureType.ImageMemoryBarrier,
-      Image = image,
-      SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-      DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-      SubresourceRange =
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-                LevelCount = 1,
-            }
-    };
-
-    var mipWidth = width;
-    var mipHeight = height;
-
-    for (uint i = 1; i < mipLevels; i++)
-    {
-      barrier.SubresourceRange.BaseMipLevel = i - 1;
-      barrier.OldLayout = ImageLayout.TransferDstOptimal;
-      barrier.NewLayout = ImageLayout.TransferSrcOptimal;
-      barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
-      barrier.DstAccessMask = AccessFlags.TransferReadBit;
-
-      vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, 0,
-          0, null,
-          0, null,
-          1, barrier);
-
-      ImageBlit blit = new()
-      {
-        SrcOffsets =
-                {
-                    Element0 = new Offset3D(0,0,0),
-                    Element1 = new Offset3D((int)mipWidth, (int)mipHeight, 1),
-                },
-        SrcSubresource =
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = i - 1,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
-                },
-        DstOffsets =
-                {
-                    Element0 = new Offset3D(0,0,0),
-                    Element1 = new Offset3D((int)(mipWidth > 1 ? mipWidth / 2 : 1), (int)(mipHeight > 1 ? mipHeight / 2 : 1),1),
-                },
-        DstSubresource =
-                {
-                    AspectMask = ImageAspectFlags.ColorBit,
-                    MipLevel = i,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
-                },
-
-      };
-
-      vk!.CmdBlitImage(commandBuffer,
-          image, ImageLayout.TransferSrcOptimal,
-          image, ImageLayout.TransferDstOptimal,
-          1, blit,
-          Filter.Linear);
-
-      barrier.OldLayout = ImageLayout.TransferSrcOptimal;
-      barrier.NewLayout = ImageLayout.ShaderReadOnlyOptimal;
-      barrier.SrcAccessMask = AccessFlags.TransferReadBit;
-      barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-
-      vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, 0,
-          0, null,
-          0, null,
-          1, barrier);
-
-      if (mipWidth > 1) mipWidth /= 2;
-      if (mipHeight > 1) mipHeight /= 2;
-    }
-
-    barrier.SubresourceRange.BaseMipLevel = mipLevels - 1;
-    barrier.OldLayout = ImageLayout.TransferDstOptimal;
-    barrier.NewLayout = ImageLayout.ShaderReadOnlyOptimal;
-    barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
-    barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-
-    vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, 0,
-        0, null,
-        0, null,
-        1, barrier);
-
-    EndSingleTimeCommands(commandBuffer);
-  }
-
-  private void CreateTextureImageView()
-  {
-    textureImageView = CreateImageView(textureImage, Format.R8G8B8A8Srgb, ImageAspectFlags.ColorBit, mipLevels);
   }
 
   private void CreateTextureSampler()
@@ -761,13 +628,6 @@ public unsafe class Application
       Image = image,
       ViewType = ImageViewType.Type2D,
       Format = format,
-      //Components =
-      //    {
-      //        R = ComponentSwizzle.Identity,
-      //        G = ComponentSwizzle.Identity,
-      //        B = ComponentSwizzle.Identity,
-      //        A = ComponentSwizzle.Identity,
-      //    },
       SubresourceRange =
                 {
                     AspectMask = aspectFlags,
@@ -786,148 +646,6 @@ public unsafe class Application
     }
 
     return imageView;
-  }
-
-  private void CreateImage(uint width, uint height, uint mipLevels, SampleCountFlags numSamples, Format format, ImageTiling tiling, ImageUsageFlags usage, MemoryPropertyFlags properties, ref Image image, ref DeviceMemory imageMemory)
-  {
-    ImageCreateInfo imageInfo = new()
-    {
-      SType = StructureType.ImageCreateInfo,
-      ImageType = ImageType.Type2D,
-      Extent =
-            {
-                Width = width,
-                Height = height,
-                Depth = 1,
-            },
-      MipLevels = mipLevels,
-      ArrayLayers = 1,
-      Format = format,
-      Tiling = tiling,
-      InitialLayout = ImageLayout.Undefined,
-      Usage = usage,
-      Samples = numSamples,
-      SharingMode = SharingMode.Exclusive,
-    };
-
-    fixed (Image* imagePtr = &image)
-    {
-      if (vk!.CreateImage(device, imageInfo, null, imagePtr) != Result.Success)
-      {
-        throw new Exception("failed to create image!");
-      }
-    }
-
-    vk!.GetImageMemoryRequirements(device, image, out MemoryRequirements memRequirements);
-
-    MemoryAllocateInfo allocInfo = new()
-    {
-      SType = StructureType.MemoryAllocateInfo,
-      AllocationSize = memRequirements.Size,
-      MemoryTypeIndex = FindMemoryType(memRequirements.MemoryTypeBits, properties),
-    };
-
-    fixed (DeviceMemory* imageMemoryPtr = &imageMemory)
-    {
-      if (vk!.AllocateMemory(device, allocInfo, null, imageMemoryPtr) != Result.Success)
-      {
-        throw new Exception("failed to allocate image memory!");
-      }
-    }
-
-    vk!.BindImageMemory(device, image, imageMemory, 0);
-  }
-
-  private void TransitionImageLayout(Image image, Format format, ImageLayout oldLayout, ImageLayout newLayout, uint mipLevels)
-  {
-    CommandBuffer commandBuffer = BeginSingleTimeCommands();
-
-    ImageMemoryBarrier barrier = new()
-    {
-      SType = StructureType.ImageMemoryBarrier,
-      OldLayout = oldLayout,
-      NewLayout = newLayout,
-      SrcQueueFamilyIndex = Vk.QueueFamilyIgnored,
-      DstQueueFamilyIndex = Vk.QueueFamilyIgnored,
-      Image = image,
-      SubresourceRange =
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                BaseMipLevel = 0,
-                LevelCount = mipLevels,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            }
-    };
-
-    PipelineStageFlags sourceStage;
-    PipelineStageFlags destinationStage;
-
-    if (oldLayout == ImageLayout.Undefined && newLayout == ImageLayout.TransferDstOptimal)
-    {
-      barrier.SrcAccessMask = 0;
-      barrier.DstAccessMask = AccessFlags.TransferWriteBit;
-
-      sourceStage = PipelineStageFlags.TopOfPipeBit;
-      destinationStage = PipelineStageFlags.TransferBit;
-    }
-    else if (oldLayout == ImageLayout.TransferDstOptimal && newLayout == ImageLayout.ShaderReadOnlyOptimal)
-    {
-      barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
-      barrier.DstAccessMask = AccessFlags.ShaderReadBit;
-
-      sourceStage = PipelineStageFlags.TransferBit;
-      destinationStage = PipelineStageFlags.FragmentShaderBit;
-    }
-    else
-    {
-      throw new Exception("unsupported layout transition!");
-    }
-
-    vk!.CmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, null, 0, null, 1, barrier);
-
-    EndSingleTimeCommands(commandBuffer);
-
-  }
-
-  private CommandBuffer BeginSingleTimeCommands()
-  {
-    CommandBufferAllocateInfo allocateInfo = new()
-    {
-      SType = StructureType.CommandBufferAllocateInfo,
-      Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool,
-      CommandBufferCount = 1,
-    };
-
-    vk!.AllocateCommandBuffers(device, allocateInfo, out CommandBuffer commandBuffer);
-
-    CommandBufferBeginInfo beginInfo = new()
-    {
-      SType = StructureType.CommandBufferBeginInfo,
-      Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-    };
-
-    vk!.BeginCommandBuffer(commandBuffer, beginInfo);
-
-    return commandBuffer;
-  }
-
-  private void EndSingleTimeCommands(CommandBuffer commandBuffer)
-  {
-    vk!.EndCommandBuffer(commandBuffer);
-
-    SubmitInfo submitInfo = new()
-    {
-      SType = StructureType.SubmitInfo,
-      CommandBufferCount = 1,
-      PCommandBuffers = &commandBuffer,
-    };
-
-    vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
-    vk!.QueueWaitIdle(graphicsQueue);
-
-    vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
   }
 
   private void CreateVertexBuffer()
@@ -1044,7 +762,7 @@ public unsafe class Application
       DescriptorImageInfo imageInfo = new()
       {
         ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        ImageView = textureImageView,
+        ImageView = texture.ImageView,
         Sampler = textureSampler,
       };
 
@@ -1861,7 +1579,7 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImageViews.Length; i++)
     {
-      var attachments = new[] { colorImageView, depthImageView, swapChainImageViews[i] };
+      var attachments = new[] { colorImage.ImageView, depthImage.ImageView, swapChainImageViews[i] };
 
       fixed (ImageView* attachmentsPtr = attachments)
       {
@@ -1886,18 +1604,42 @@ public unsafe class Application
 
   private void CreateColorResources()
   {
-    Format colorFormat = swapChainImageFormat;
-
-    CreateImage(swapChainExtent.Width, swapChainExtent.Height, 1, msaaSamples, colorFormat, ImageTiling.Optimal, ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref colorImage, ref colorImageMemory);
-    colorImageView = CreateImageView(colorImage, colorFormat, ImageAspectFlags.ColorBit, 1);
+    colorImage = new Texture(device, physicalDevice);
+    colorImage.Allocate(
+      new Extent3D
+      {
+        Width = swapChainExtent.Width,
+        Height = swapChainExtent.Height,
+        Depth = 1
+      },
+      1,
+      msaaSamples,
+      swapChainImageFormat,
+      ImageTiling.Optimal,
+      ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit,
+      MemoryPropertyFlags.DeviceLocalBit,
+      ImageAspectFlags.ColorBit);
   }
 
   private void CreateDepthResources()
   {
     Format depthFormat = FindDepthFormat();
 
-    CreateImage(swapChainExtent.Width, swapChainExtent.Height, 1, msaaSamples, depthFormat, ImageTiling.Optimal, ImageUsageFlags.DepthStencilAttachmentBit, MemoryPropertyFlags.DeviceLocalBit, ref depthImage, ref depthImageMemory);
-    depthImageView = CreateImageView(depthImage, depthFormat, ImageAspectFlags.DepthBit, 1);
+    depthImage = new Texture(device, physicalDevice);
+    depthImage.Allocate(
+      new Extent3D
+      {
+        Width = swapChainExtent.Width,
+        Height = swapChainExtent.Height,
+        Depth = 1
+      },
+      1,
+      msaaSamples,
+      depthFormat,
+      ImageTiling.Optimal,
+      ImageUsageFlags.DepthStencilAttachmentBit,
+      MemoryPropertyFlags.DeviceLocalBit,
+      ImageAspectFlags.DepthBit);
   }
 
   private Format FindSupportedFormat(IEnumerable<Format> candidates, ImageTiling tiling, FormatFeatureFlags features)

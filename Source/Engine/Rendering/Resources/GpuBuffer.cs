@@ -46,11 +46,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     {
       SType = StructureType.MemoryAllocateInfo,
       AllocationSize = memRequirements.Size,
-<<<<<<< Updated upstream
       MemoryTypeIndex = Utility.FindMemoryType(physicalDevice, memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
-=======
-      MemoryTypeIndex = physicalDevice.FindMemoryType(memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
->>>>>>> Stashed changes
     };
 
     fixed (DeviceMemory* bufferMemoryPtr = &memory)
@@ -177,7 +173,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
   }
 
-  private void* MapRange(ulong offsetbytes, ulong sizeBytes)
+  public void* MapRange(ulong offsetbytes, ulong sizeBytes)
   {
     if (!Allocated)
     {
@@ -189,7 +185,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     return data;
   }
 
-  private void Unmap()
+  public void Unmap()
   {
     vk!.UnmapMemory(device, memory);
   }
@@ -216,11 +212,6 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
       BufferType.Uniform => MemoryPropertyFlags.HostVisibleBit | MemoryPropertyFlags.HostCoherentBit,
       _ => throw new Exception($"Could not map to {nameof(MemoryPropertyFlags)}. Unsupported {nameof(BufferType)}: {gpuBufferType}."),
     };
-  }
-
-  public void Deallocate()
-  {
-    Dispose();
   }
 
   public void Dispose()
