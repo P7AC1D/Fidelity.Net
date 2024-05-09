@@ -46,7 +46,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     {
       SType = StructureType.MemoryAllocateInfo,
       AllocationSize = memRequirements.Size,
-      MemoryTypeIndex = Utility.FindMemoryType(physicalDevice, memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
+      MemoryTypeIndex = physicalDevice.FindMemoryType(memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
     };
 
     fixed (DeviceMemory* bufferMemoryPtr = &memory)

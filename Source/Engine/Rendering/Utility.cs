@@ -4,22 +4,6 @@ namespace Fidelity;
 
 public static class Utility
 {
-  public static uint FindMemoryType(PhysicalDevice physicalDevice, uint typeFilter, MemoryPropertyFlags properties)
-  {
-    Vk vk = Vk.GetApi();
-    vk!.GetPhysicalDeviceMemoryProperties(physicalDevice, out PhysicalDeviceMemoryProperties memProperties);
-
-    for (int i = 0; i < memProperties.MemoryTypeCount; i++)
-    {
-      if ((typeFilter & (1 << i)) != 0 && (memProperties.MemoryTypes[i].PropertyFlags & properties) == properties)
-      {
-        return (uint)i;
-      }
-    }
-
-    throw new Exception("Failed to find suitable memory.");
-  }
-
   public static CommandBuffer BeginSingleTimeCommands(CommandPool commandPool, Device device)
   {
     Vk vk = Vk.GetApi();
