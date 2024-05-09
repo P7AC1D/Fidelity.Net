@@ -1,4 +1,5 @@
 using Fidelity.Rendering.Enums;
+using Fidelity.Rendering.Extensions;
 using Silk.NET.Vulkan;
 using System.Runtime.CompilerServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -45,7 +46,11 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     {
       SType = StructureType.MemoryAllocateInfo,
       AllocationSize = memRequirements.Size,
+<<<<<<< Updated upstream
       MemoryTypeIndex = Utility.FindMemoryType(physicalDevice, memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
+=======
+      MemoryTypeIndex = physicalDevice.FindMemoryType(memRequirements.MemoryTypeBits, MapMemoryProperty(gpuBufferType)),
+>>>>>>> Stashed changes
     };
 
     fixed (DeviceMemory* bufferMemoryPtr = &memory)
