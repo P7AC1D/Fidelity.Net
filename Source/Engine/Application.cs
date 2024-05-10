@@ -120,7 +120,7 @@ public unsafe class Application
   private Extent2D swapChainExtent;
   private ImageView[]? swapChainImageViews;
   private Framebuffer[]? swapChainFramebuffers;
-  private GraphicsPipelineRenderPass graphicsPipelineRenderPass;
+  private Rendering.Resources.RenderPass graphicsPipelineRenderPass;
   private DescriptorSetLayout descriptorSetLayout;
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
@@ -991,7 +991,7 @@ public unsafe class Application
       RenderPassBeginInfo renderPassInfo = new()
       {
         SType = StructureType.RenderPassBeginInfo,
-        RenderPass = graphicsPipelineRenderPass.RenderPass,
+        RenderPass = graphicsPipelineRenderPass.Pass,
         Framebuffer = swapChainFramebuffers[i],
         RenderArea =
                 {
@@ -1213,7 +1213,7 @@ public unsafe class Application
         PDepthStencilState = &depthStencil,
         PColorBlendState = &colorBlending,
         Layout = pipelineLayout,
-        RenderPass = graphicsPipelineRenderPass.RenderPass,
+        RenderPass = graphicsPipelineRenderPass.Pass,
         Subpass = 0,
         BasePipelineHandle = default
       };
@@ -1233,7 +1233,7 @@ public unsafe class Application
 
   private void CreateRenderPass()
   {
-    graphicsPipelineRenderPass = new GraphicsPipelineRenderPass(device, physicalDevice)
+        graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
       .AddColorAttachment(swapChainImageFormat, msaaSamples)
       .AddDepthAttachment(msaaSamples)
       .AddResolverAttachment(swapChainImageFormat)
@@ -1505,7 +1505,7 @@ public unsafe class Application
         FramebufferCreateInfo framebufferInfo = new()
         {
           SType = StructureType.FramebufferCreateInfo,
-          RenderPass = graphicsPipelineRenderPass.RenderPass,
+          RenderPass = graphicsPipelineRenderPass.Pass,
           AttachmentCount = (uint)attachments.Length,
           PAttachments = attachmentsPtr,
           Width = swapChainExtent.Width,
