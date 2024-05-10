@@ -1,3 +1,4 @@
+using Silk.NET.Core.Native;
 using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
@@ -6,14 +7,15 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
 {
   private readonly Vk vk = Vk.GetApi();
   private ShaderModule? vertexShader, fragmentShader;
-  private VertexInputBindingDescription[]? vertexInputBindingDescriptions;
-  private VertexInputAttributeDescription[]? vertexInputAttributeDescriptions;
+  private IList<VertexInputBindingDescription> vertexInputBindingDescriptions;
+  private IList<VertexInputAttributeDescription> vertexInputAttributeDescriptions;
   private PrimitiveTopology primitiveTopology = PrimitiveTopology.TriangleList;
   private Viewport? viewport;
   private Rect2D? scissor;
   private PipelineRasterizationStateCreateInfo? rasterizationState;
   private PipelineMultisampleStateCreateInfo? multisampleState;
   private PipelineDepthStencilStateCreateInfo? depthStencilState;
+  private IList<DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
@@ -37,8 +39,8 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     VertexInputBindingDescription[] vertexInputBindingDescriptions,
     VertexInputAttributeDescription[] vertexInputAttributeDescriptions)
   {
-    this.vertexInputBindingDescriptions = vertexInputBindingDescriptions;
-    this.vertexInputAttributeDescriptions = vertexInputAttributeDescriptions;
+    this.vertexInputBindingDescriptions = vertexInputBindingDescriptions.ToList();
+    this.vertexInputAttributeDescriptions = vertexInputAttributeDescriptions.ToList();
     return this;
   }
 
@@ -116,6 +118,33 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     return this;
   }
 
+  public GraphicsPipeline AddDescriptorSetLayout(DescriptorType type, uint binding, ShaderStageFlags stageFlags)
+  {
+    descriptorSetLayoutBindings.Add(new DescriptorSetLayoutBinding
+    {
+      Binding = binding,
+      DescriptorType = type,
+      DescriptorCount = 1,
+      StageFlags = stageFlags,
+    });
+    return this;
+  }
+
+  public GraphicsPipeline Allocate()
+  {
+    ValidateInput();
+
+    PipelineShaderStageCreateInfo vertexShaderStage = new()
+    {
+      SType = StructureType.PipelineShaderStageCreateInfo,
+      Stage = ShaderStageFlags.VertexBit,
+      Module = vertexShader!.Value,
+      PName = (byte*)SilkMarshal.StringToPtr("main")
+    };
+
+    return this;
+  }
+
   public void Dispose()
   {
     Dispose(true);
@@ -135,6 +164,44 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
       {
         vk!.DestroyShaderModule(device, fragmentShader.Value, null);
       }
+    }
+  }
+
+  private void ValidateInput()
+  {
+    if (!vertexInputBindingDescriptions.Any() || !vertexInputAttributeDescriptions.Any())
+    {
+      throw new Exception("Vertex input state not set.");
+    }
+
+    if (!vertexShader.HasValue || !fragmentShader.HasValue)
+    {
+      throw new Exception("Vertex and fragment shaders must be set.");
+    }
+
+    if (viewport == null || scissor == null)
+    {
+      throw new Exception("Viewport and scissor must be set.");
+    }
+
+    if (rasterizationState == null)
+    {
+      throw new Exception("Rasterization state must be set.");
+    }
+
+    if (multisampleState == null)
+    {
+      throw new Exception("Multisample state must be set.");
+    }
+
+    if (depthStencilState == null)
+    {
+      throw new Exception("Depth stencil state must be set.");
+    }
+
+    if (!descriptorSetLayoutBindings.Any())
+    {
+      throw new Exception("Descriptor set layout bindings must be set.");
     }
   }
 
