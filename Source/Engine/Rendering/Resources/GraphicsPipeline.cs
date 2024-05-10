@@ -130,6 +130,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
       {
         vk!.DestroyShaderModule(device, vertexShader.Value, null);
       }
+
+      if (fragmentShader.HasValue)
+      {
+        vk!.DestroyShaderModule(device, fragmentShader.Value, null);
+      }
     }
   }
 

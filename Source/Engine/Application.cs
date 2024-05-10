@@ -120,7 +120,7 @@ public unsafe class Application
   private Extent2D swapChainExtent;
   private ImageView[]? swapChainImageViews;
   private Framebuffer[]? swapChainFramebuffers;
-  private RenderPass renderPass;
+  private GraphicsPipelineRenderPass graphicsPipelineRenderPass;
   private DescriptorSetLayout descriptorSetLayout;
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
@@ -344,7 +344,6 @@ public unsafe class Application
 
     vk!.DestroyPipeline(device, graphicsPipeline, null);
     vk!.DestroyPipelineLayout(device, pipelineLayout, null);
-    vk!.DestroyRenderPass(device, renderPass, null);
 
     foreach (var imageView in swapChainImageViews!)
     {
@@ -992,7 +991,7 @@ public unsafe class Application
       RenderPassBeginInfo renderPassInfo = new()
       {
         SType = StructureType.RenderPassBeginInfo,
-        RenderPass = renderPass,
+        RenderPass = graphicsPipelineRenderPass.RenderPass,
         Framebuffer = swapChainFramebuffers[i],
         RenderArea =
                 {
@@ -1214,7 +1213,7 @@ public unsafe class Application
         PDepthStencilState = &depthStencil,
         PColorBlendState = &colorBlending,
         Layout = pipelineLayout,
-        RenderPass = renderPass,
+        RenderPass = graphicsPipelineRenderPass.RenderPass,
         Subpass = 0,
         BasePipelineHandle = default
       };
@@ -1234,98 +1233,11 @@ public unsafe class Application
 
   private void CreateRenderPass()
   {
-    AttachmentDescription colorAttachment = new()
-    {
-      Format = swapChainImageFormat,
-      Samples = msaaSamples,
-      LoadOp = AttachmentLoadOp.Clear,
-      StoreOp = AttachmentStoreOp.Store,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    AttachmentDescription depthAttachment = new()
-    {
-      Format = FindDepthFormat(),
-      Samples = msaaSamples,
-      LoadOp = AttachmentLoadOp.Clear,
-      StoreOp = AttachmentStoreOp.DontCare,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      StencilStoreOp = AttachmentStoreOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
-    };
-
-    AttachmentDescription colorAttachmentResolve = new()
-    {
-      Format = swapChainImageFormat,
-      Samples = SampleCountFlags.Count1Bit,
-      LoadOp = AttachmentLoadOp.DontCare,
-      StoreOp = AttachmentStoreOp.Store,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      StencilStoreOp = AttachmentStoreOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.PresentSrcKhr,
-    };
-
-    AttachmentReference colorAttachmentRef = new()
-    {
-      Attachment = 0,
-      Layout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    AttachmentReference depthAttachmentRef = new()
-    {
-      Attachment = 1,
-      Layout = ImageLayout.DepthStencilAttachmentOptimal,
-    };
-
-    AttachmentReference colorAttachmentResolveRef = new()
-    {
-      Attachment = 2,
-      Layout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    SubpassDescription subpass = new()
-    {
-      PipelineBindPoint = PipelineBindPoint.Graphics,
-      ColorAttachmentCount = 1,
-      PColorAttachments = &colorAttachmentRef,
-      PDepthStencilAttachment = &depthAttachmentRef,
-      PResolveAttachments = &colorAttachmentResolveRef,
-    };
-
-    SubpassDependency dependency = new()
-    {
-      SrcSubpass = Vk.SubpassExternal,
-      DstSubpass = 0,
-      SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-      SrcAccessMask = 0,
-      DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-      DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
-    };
-
-    var attachments = new[] { colorAttachment, depthAttachment, colorAttachmentResolve };
-
-    fixed (AttachmentDescription* attachmentsPtr = attachments)
-    {
-      RenderPassCreateInfo renderPassInfo = new()
-      {
-        SType = StructureType.RenderPassCreateInfo,
-        AttachmentCount = (uint)attachments.Length,
-        PAttachments = attachmentsPtr,
-        SubpassCount = 1,
-        PSubpasses = &subpass,
-        DependencyCount = 1,
-        PDependencies = &dependency,
-      };
-
-      if (vk!.CreateRenderPass(device, renderPassInfo, null, out renderPass) != Result.Success)
-      {
-        throw new Exception("failed to create render pass!");
-      }
-    }
+    graphicsPipelineRenderPass = new GraphicsPipelineRenderPass(device, physicalDevice)
+      .AddColorAttachment(swapChainImageFormat, msaaSamples)
+      .AddDepthAttachment(msaaSamples)
+      .AddResolverAttachment(swapChainImageFormat)
+      .Allocate();
   }
 
   private ShaderModule CreateShaderModule(byte[] code)
@@ -1593,7 +1505,7 @@ public unsafe class Application
         FramebufferCreateInfo framebufferInfo = new()
         {
           SType = StructureType.FramebufferCreateInfo,
-          RenderPass = renderPass,
+          RenderPass = graphicsPipelineRenderPass.RenderPass,
           AttachmentCount = (uint)attachments.Length,
           PAttachments = attachmentsPtr,
           Width = swapChainExtent.Width,
