@@ -15,6 +15,8 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   private PipelineRasterizationStateCreateInfo? rasterizationState;
   private PipelineMultisampleStateCreateInfo? multisampleState;
   private PipelineDepthStencilStateCreateInfo? depthStencilState;
+  private DescriptorSetLayout? descriptorSetLayout;
+  private PipelineLayout pipelineLayout;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
@@ -100,7 +102,7 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   }
 
   public GraphicsPipeline SetDepthStencilState(
-    bool depthTestEnabled = true, 
+    bool depthTestEnabled = true,
     bool depthWriteEnable = true,
     CompareOp depthCompareOp = CompareOp.Less,
     bool stencilTestEnabled = false)
@@ -117,18 +119,98 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     return this;
   }
 
+  public GraphicsPipeline SetDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout)
+  {
+    this.descriptorSetLayout = descriptorSetLayout;
+    return this;
+  }
+
   public GraphicsPipeline Allocate()
   {
     ValidateInput();
 
-    PipelineShaderStageCreateInfo vertexShaderStage = new()
-    {
-      SType = StructureType.PipelineShaderStageCreateInfo,
-      Stage = ShaderStageFlags.VertexBit,
-      Module = vertexShader!.Value,
-      PName = (byte*)SilkMarshal.StringToPtr("main")
-    };
+    IList<PipelineShaderStageCreateInfo> shaderStages =
+    [
+      new PipelineShaderStageCreateInfo
+      {
+        SType = StructureType.PipelineShaderStageCreateInfo,
+        Stage = ShaderStageFlags.VertexBit,
+        Module = vertexShader!.Value,
+        PName = (byte*)SilkMarshal.StringToPtr("main")
+      },
+      new PipelineShaderStageCreateInfo
+      {
+        SType = StructureType.PipelineShaderStageCreateInfo,
+        Stage = ShaderStageFlags.FragmentBit,
+        Module = fragmentShader!.Value,
+        PName = (byte*)SilkMarshal.StringToPtr("main")
+      }
+    ];
 
+    fixed (VertexInputAttributeDescription* attributeDescriptionsPtr = vertexInputAttributeDescriptions.ToArray())
+    fixed (VertexInputBindingDescription* bindingDescriptionsPtr = vertexInputBindingDescriptions.ToArray())
+    {
+      PipelineVertexInputStateCreateInfo vertexInputInfo = new()
+      {
+        SType = StructureType.PipelineVertexInputStateCreateInfo,
+        VertexBindingDescriptionCount = (uint)vertexInputBindingDescriptions.Count,
+        VertexAttributeDescriptionCount = (uint)vertexInputAttributeDescriptions.Count,
+        PVertexBindingDescriptions = bindingDescriptionsPtr,
+        PVertexAttributeDescriptions = attributeDescriptionsPtr,
+      };
+
+      PipelineInputAssemblyStateCreateInfo inputAssembly = new()
+      {
+        SType = StructureType.PipelineInputAssemblyStateCreateInfo,
+        Topology = primitiveTopology,
+        PrimitiveRestartEnable = false,
+      };
+
+      var layout = descriptorSetLayout!.Value;
+      PipelineLayoutCreateInfo pipelineLayoutInfo = new()
+      {
+        SType = StructureType.PipelineLayoutCreateInfo,
+        PushConstantRangeCount = 0,
+        SetLayoutCount = 1,
+        PSetLayouts = &layout,
+      };
+
+      if (vk!.CreatePipelineLayout(device, pipelineLayoutInfo, null, out pipelineLayout) != Result.Success)
+      {
+        throw new Exception("Failed to create pipeline layout.");
+      }
+
+      fixed (PipelineShaderStageCreateInfo* shaderStagesPtr = shaderStages.ToArray())
+      {
+        GraphicsPipelineCreateInfo pipelineInfo = new()
+        {
+          SType = StructureType.GraphicsPipelineCreateInfo,
+          StageCount = (uint)shaderStages.Count,
+          PStages = shaderStagesPtr,
+          PVertexInputState = &vertexInputInfo,
+          PInputAssemblyState = &inputAssembly,
+          PViewportState = &viewportState,
+          PRasterizationState = &rasterizer,
+          PMultisampleState = &multisampling,
+          PDepthStencilState = &depthStencil,
+          PColorBlendState = &colorBlending,
+          Layout = pipelineLayout,
+          RenderPass = graphicsPipelineRenderPass.Pass,
+          Subpass = 0,
+          BasePipelineHandle = default
+        };
+
+        if (vk!.CreateGraphicsPipelines(device, default, 1, pipelineInfo, null, out graphicsPipeline) != Result.Success)
+        {
+          throw new Exception("failed to create graphics pipeline!");
+        }
+      }
+    }
+
+    foreach (var shaderStage in shaderStages)
+    {
+      SilkMarshal.Free((nint)shaderStage.PName);
+    }
     return this;
   }
 
@@ -186,7 +268,7 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
       throw new Exception("Depth stencil state must be set.");
     }
 
-    if (!descriptorSetLayoutBindings.Any())
+    if (!descriptorSetLayout.HasValue)
     {
       throw new Exception("Descriptor set layout bindings must be set.");
     }

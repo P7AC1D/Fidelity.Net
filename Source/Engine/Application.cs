@@ -129,10 +129,10 @@ public unsafe class Application
   private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
-  private Rendering.Resources.DescriptorSets descriptorSets;
+  private Rendering.Resources.DescriptorSet[] descriptorSets;
 
   private Texture texture;
-  private Sampler textureSampler;
+  private TextureSampler textureSampler;
 
   private Texture colorImage;
   private Texture depthImage;
@@ -369,8 +369,6 @@ public unsafe class Application
   {
     CleanUpSwapChain();
 
-    vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
-
     vertexBuffer?.Dispose();
     indexBuffer?.Dispose();
 
@@ -410,7 +408,6 @@ public unsafe class Application
     CreateImageViews();
 
     CreateRenderPass();
-    CreateDescriptorSetLayout();
     CreateGraphicsPipeline();
     CreateCommandPool();
 
@@ -595,35 +592,9 @@ public unsafe class Application
 
   private void CreateTextureSampler()
   {
-    vk!.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties properties);
-
-    SamplerCreateInfo samplerInfo = new()
-    {
-      SType = StructureType.SamplerCreateInfo,
-      MagFilter = Filter.Linear,
-      MinFilter = Filter.Linear,
-      AddressModeU = SamplerAddressMode.Repeat,
-      AddressModeV = SamplerAddressMode.Repeat,
-      AddressModeW = SamplerAddressMode.Repeat,
-      AnisotropyEnable = true,
-      MaxAnisotropy = properties.Limits.MaxSamplerAnisotropy,
-      BorderColor = BorderColor.IntOpaqueBlack,
-      UnnormalizedCoordinates = false,
-      CompareEnable = false,
-      CompareOp = CompareOp.Always,
-      MipmapMode = SamplerMipmapMode.Linear,
-      MinLod = 0,
-      MaxLod = mipLevels,
-      MipLodBias = 0,
-    };
-
-    fixed (Sampler* textureSamplerPtr = &textureSampler)
-    {
-      if (vk!.CreateSampler(device, samplerInfo, null, textureSamplerPtr) != Result.Success)
-      {
-        throw new Exception("failed to create texture sampler!");
-      }
-    }
+    textureSampler = new TextureSampler(device, physicalDevice)
+      .SetMipmapping(maxLod: mipLevels)
+      .Allocate();
   }
 
   private ImageView CreateImageView(Image image, Format format, ImageAspectFlags aspectFlags, uint mipLevels)
@@ -731,84 +702,19 @@ public unsafe class Application
 
   private void CreateDescriptorSets()
   {
-    var layouts = new DescriptorSetLayout[swapChainImages!.Length];
-    Array.Fill(layouts, descriptorSetLayout);
-
-    fixed (DescriptorSetLayout* layoutsPtr = layouts)
+    descriptorSets = new Rendering.Resources.DescriptorSet[swapChainImages!.Length];
+    for (int i = 0; i < swapChainImages!.Length; i++)
     {
-      DescriptorSetAllocateInfo allocateInfo = new()
-      {
-        SType = StructureType.DescriptorSetAllocateInfo,
-        DescriptorPool = descriptorPool,
-        DescriptorSetCount = (uint)swapChainImages!.Length,
-        PSetLayouts = layoutsPtr,
-      };
-
-      descriptorSets = new DescriptorSet[swapChainImages.Length];
-      fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
-      {
-        if (vk!.AllocateDescriptorSets(device, allocateInfo, descriptorSetsPtr) != Result.Success)
-        {
-          throw new Exception("failed to allocate descriptor sets!");
-        }
-      }
-    }
-
-    descriptorSets = new DescriptorSets(device, physicalDevice, descriptorPool)
-      .AddDescriptorSetLayout
-
-
-    for (int i = 0; i < swapChainImages.Length; i++)
-    {
-      DescriptorBufferInfo bufferInfo = new()
-      {
-        Buffer = uniformBuffers![i].Buffer,
-        Offset = 0,
-        Range = (ulong)Unsafe.SizeOf<UniformBufferObject>(),
-
-      };
-
-      DescriptorImageInfo imageInfo = new()
-      {
-        ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        ImageView = texture.ImageView,
-        Sampler = textureSampler,
-      };
-
-      var descriptorWrites = new WriteDescriptorSet[]
-      {
-        new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = descriptorSets[i],
-            DstBinding = 0,
-            DstArrayElement = 0,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            PBufferInfo = &bufferInfo,
-        },
-        new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = descriptorSets[i],
-            DstBinding = 1,
-            DstArrayElement = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &imageInfo,
-        }
-      };
-
-      fixed (WriteDescriptorSet* descriptorWritesPtr = descriptorWrites)
-      {
-        vk!.UpdateDescriptorSets(device, (uint)descriptorWrites.Length, descriptorWritesPtr, 0, null);
-      }
+      descriptorSets[i] = new Rendering.Resources.DescriptorSet(device, physicalDevice, descriptorPool)
+        .AddUniformBuffer(uniformBuffers![i], 0)
+        .AddTexureSampler(texture, textureSampler, 1)
+        .Allocate()
+        .Update();
     }
   }
 
   private void UpdateUniformBuffer(uint currentImage)
   {
-    //Silk Window has timing information so we are skipping the time code.
     var time = (float)window!.Time;
 
     UniformBufferObject ubo = new()
@@ -821,14 +727,6 @@ public unsafe class Application
 
     uniformBuffers![currentImage].WriteData(ubo);
 
-  }
-
-  private void CreateDescriptorSetLayout()
-  {
-    descriptorSets = new Rendering.Resources.DescriptorSets(device, physicalDevice, descriptorPool)
-      .AddDescriptorSetLayout(DescriptorType.UniformBuffer, 0, ShaderStageFlags.VertexBit)
-      .AddDescriptorSetLayout(DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit)
-      .Allocate();
   }
 
   private void CreateCommandBuffers()
@@ -910,7 +808,7 @@ public unsafe class Application
 
       vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
-      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
+      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
 
       vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
 
