@@ -1,24 +1,28 @@
+
+
 using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice) : IDisposable
+public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice)
 {
   private readonly Vk vk = Vk.GetApi();
-  private DescriptorPool descriptorPool;
-  private DescriptorSetLayout descriptorSetLayout;
-  private Silk.NET.Vulkan.DescriptorSet descriptorSet;
+  private IList<WriteDescriptorSet> writeDescriptorSets;
 
-  public void Dispose()
+  public DescriptorSet BindBuffer(GpuBuffer gpuBuffer, uint binding)
   {
-    Dispose(true);
-    GC.SuppressFinalize(this);
-  }
-
-  protected virtual void Dispose(bool disposing)
-  {
-    if (disposing)
+    DescriptorBufferInfo bufferInfo = new()
     {
-    }
+      Buffer = gpuBuffer!.Buffer,
+      Offset = 0,
+      Range = gpuBuffer.SizeBytes,
+
+    };
+
+    writeDescriptorSets.Add(new WriteDescriptorSet
+    {
+
+    });
+    return this;
   }
 }

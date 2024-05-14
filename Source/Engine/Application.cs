@@ -121,7 +121,7 @@ public unsafe class Application
   private ImageView[]? swapChainImageViews;
   private Framebuffer[]? swapChainFramebuffers;
   private Rendering.Resources.RenderPass graphicsPipelineRenderPass;
-  private DescriptorSetLayout descriptorSetLayout;
+
   private PipelineLayout pipelineLayout;
   private Pipeline graphicsPipeline;
 
@@ -129,7 +129,7 @@ public unsafe class Application
   private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
-  private DescriptorSet[]? descriptorSets;
+  private Rendering.Resources.DescriptorSets descriptorSets;
 
   private Texture texture;
   private Sampler textureSampler;
@@ -754,6 +754,9 @@ public unsafe class Application
       }
     }
 
+    descriptorSets = new DescriptorSets(device, physicalDevice, descriptorPool)
+      .AddDescriptorSetLayout
+
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
@@ -822,41 +825,10 @@ public unsafe class Application
 
   private void CreateDescriptorSetLayout()
   {
-    DescriptorSetLayoutBinding uboLayoutBinding = new()
-    {
-      Binding = 0,
-      DescriptorCount = 1,
-      DescriptorType = DescriptorType.UniformBuffer,
-      PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.VertexBit,
-    };
-
-    DescriptorSetLayoutBinding samplerLayoutBinding = new()
-    {
-      Binding = 1,
-      DescriptorCount = 1,
-      DescriptorType = DescriptorType.CombinedImageSampler,
-      PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.FragmentBit,
-    };
-
-    var bindings = new DescriptorSetLayoutBinding[] { uboLayoutBinding, samplerLayoutBinding };
-
-    fixed (DescriptorSetLayoutBinding* bindingsPtr = bindings)
-    fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
-    {
-      DescriptorSetLayoutCreateInfo layoutInfo = new()
-      {
-        SType = StructureType.DescriptorSetLayoutCreateInfo,
-        BindingCount = (uint)bindings.Length,
-        PBindings = bindingsPtr,
-      };
-
-      if (vk!.CreateDescriptorSetLayout(device, layoutInfo, null, descriptorSetLayoutPtr) != Result.Success)
-      {
-        throw new Exception("failed to create descriptor set layout!");
-      }
-    }
+    descriptorSets = new Rendering.Resources.DescriptorSets(device, physicalDevice, descriptorPool)
+      .AddDescriptorSetLayout(DescriptorType.UniformBuffer, 0, ShaderStageFlags.VertexBit)
+      .AddDescriptorSetLayout(DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit)
+      .Allocate();
   }
 
   private void CreateCommandBuffers()

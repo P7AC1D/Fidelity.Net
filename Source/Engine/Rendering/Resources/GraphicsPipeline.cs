@@ -15,7 +15,6 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   private PipelineRasterizationStateCreateInfo? rasterizationState;
   private PipelineMultisampleStateCreateInfo? multisampleState;
   private PipelineDepthStencilStateCreateInfo? depthStencilState;
-  private IList<DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
@@ -115,18 +114,6 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
       DepthBoundsTestEnable = false,
       StencilTestEnable = stencilTestEnabled,
     };
-    return this;
-  }
-
-  public GraphicsPipeline AddDescriptorSetLayout(DescriptorType type, uint binding, ShaderStageFlags stageFlags)
-  {
-    descriptorSetLayoutBindings.Add(new DescriptorSetLayoutBinding
-    {
-      Binding = binding,
-      DescriptorType = type,
-      DescriptorCount = 1,
-      StageFlags = stageFlags,
-    });
     return this;
   }
 
