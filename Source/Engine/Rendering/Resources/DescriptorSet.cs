@@ -5,8 +5,8 @@ namespace Fidelity.Rendering.Resources;
 public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, DescriptorPool descriptorPool) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
-  private IList<WriteDescriptorSet> writeDescriptorSets;
-  private IList<DescriptorSetLayoutBinding> descriptorSetLayoutBindings;
+  private IList<WriteDescriptorSet> writeDescriptorSets = new List<WriteDescriptorSet>();
+  private IList<DescriptorSetLayoutBinding> descriptorSetLayoutBindings = new List<DescriptorSetLayoutBinding>();
   private Silk.NET.Vulkan.DescriptorSet descriptorSet;
   private DescriptorSetLayout descriptorSetLayout;
   private bool isInitialized = false;

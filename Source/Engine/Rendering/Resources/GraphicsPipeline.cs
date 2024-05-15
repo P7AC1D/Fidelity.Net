@@ -20,6 +20,9 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   private RenderPass renderPass;
   private Pipeline graphicsPipeline;
 
+  public Pipeline Pipeline => graphicsPipeline;
+  public PipelineLayout PipelineLayout => pipelineLayout;
+
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
     vertexShader = CreateShaderModule(shaderByteCode);

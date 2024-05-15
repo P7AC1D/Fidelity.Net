@@ -122,8 +122,7 @@ public unsafe class Application
   private Framebuffer[]? swapChainFramebuffers;
   private Rendering.Resources.RenderPass graphicsPipelineRenderPass;
 
-  private PipelineLayout pipelineLayout;
-  private Pipeline graphicsPipeline;
+  private GraphicsPipeline gfxPipeline;
 
   private GpuBuffer vertexBuffer, indexBuffer;
   private GpuBuffer[] uniformBuffers;
@@ -214,14 +213,14 @@ public unsafe class Application
 
     CreateSwapChain();
     CreateImageViews();
-    CreateRenderPass();
-    CreateGraphicsPipeline();
     CreateColorResources();
     CreateDepthResources();
-    CreateFramebuffers();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
+    CreateRenderPass();
+    CreateGraphicsPipeline();
+    CreateFramebuffers();
     CreateCommandBuffers();
 
     imagesInFlight = new Fence[swapChainImages!.Length];
@@ -342,8 +341,7 @@ public unsafe class Application
       vk!.FreeCommandBuffers(device, commandPool, (uint)commandBuffers!.Length, commandBuffersPtr);
     }
 
-    vk!.DestroyPipeline(device, graphicsPipeline, null);
-    vk!.DestroyPipelineLayout(device, pipelineLayout, null);
+    gfxPipeline.Dispose();
 
     foreach (var imageView in swapChainImageViews!)
     {
@@ -407,14 +405,10 @@ public unsafe class Application
     CreateSwapChain();
     CreateImageViews();
 
-    CreateRenderPass();
-    CreateGraphicsPipeline();
-    CreateCommandPool();
-
     CreateColorResources();
     CreateDepthResources();
 
-    CreateFramebuffers();
+    CreateCommandPool();
 
     CreateTextureImage();
     CreateTextureSampler();
@@ -426,6 +420,11 @@ public unsafe class Application
     
     CreateDescriptorPool();
     CreateDescriptorSets();
+
+    CreateRenderPass();
+    CreateGraphicsPipeline();
+    CreateFramebuffers();
+
     CreateCommandBuffers();
     CreateSyncObjects();
   }
@@ -795,7 +794,7 @@ public unsafe class Application
         vk!.CmdBeginRenderPass(commandBuffers[i], &renderPassInfo, SubpassContents.Inline);
       }
 
-      vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
+      vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, gfxPipeline.Pipeline);
 
       var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
       var offsets = new ulong[] { 0 };
@@ -808,7 +807,7 @@ public unsafe class Application
 
       vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
-      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
+      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, gfxPipeline.PipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
 
       vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
 
@@ -839,175 +838,23 @@ public unsafe class Application
     var vertShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
     var fragShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
 
-    var vertShaderModule = CreateShaderModule(vertShaderCode);
-    var fragShaderModule = CreateShaderModule(fragShaderCode);
-
-    PipelineShaderStageCreateInfo vertShaderStageInfo = new()
-    {
-      SType = StructureType.PipelineShaderStageCreateInfo,
-      Stage = ShaderStageFlags.VertexBit,
-      Module = vertShaderModule,
-      PName = (byte*)SilkMarshal.StringToPtr("main")
-    };
-
-    PipelineShaderStageCreateInfo fragShaderStageInfo = new()
-    {
-      SType = StructureType.PipelineShaderStageCreateInfo,
-      Stage = ShaderStageFlags.FragmentBit,
-      Module = fragShaderModule,
-      PName = (byte*)SilkMarshal.StringToPtr("main")
-    };
-
-    var shaderStages = stackalloc[]
-    {
-            vertShaderStageInfo,
-            fragShaderStageInfo
-        };
-
-    var bindingDescription = Vertex.GetBindingDescription();
-    var attributeDescriptions = Vertex.GetAttributeDescriptions();
-
-    fixed (VertexInputAttributeDescription* attributeDescriptionsPtr = attributeDescriptions)
-    fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
-    {
-
-      PipelineVertexInputStateCreateInfo vertexInputInfo = new()
-      {
-        SType = StructureType.PipelineVertexInputStateCreateInfo,
-        VertexBindingDescriptionCount = 1,
-        VertexAttributeDescriptionCount = (uint)attributeDescriptions.Length,
-        PVertexBindingDescriptions = &bindingDescription,
-        PVertexAttributeDescriptions = attributeDescriptionsPtr,
-      };
-
-      PipelineInputAssemblyStateCreateInfo inputAssembly = new()
-      {
-        SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-        Topology = PrimitiveTopology.TriangleList,
-        PrimitiveRestartEnable = false,
-      };
-
-      Viewport viewport = new()
-      {
-        X = 0,
-        Y = 0,
-        Width = swapChainExtent.Width,
-        Height = swapChainExtent.Height,
-        MinDepth = 0,
-        MaxDepth = 1,
-      };
-
-      Rect2D scissor = new()
-      {
-        Offset = { X = 0, Y = 0 },
-        Extent = swapChainExtent,
-      };
-
-      PipelineViewportStateCreateInfo viewportState = new()
-      {
-        SType = StructureType.PipelineViewportStateCreateInfo,
-        ViewportCount = 1,
-        PViewports = &viewport,
-        ScissorCount = 1,
-        PScissors = &scissor,
-      };
-
-      PipelineRasterizationStateCreateInfo rasterizer = new()
-      {
-        SType = StructureType.PipelineRasterizationStateCreateInfo,
-        DepthClampEnable = false,
-        RasterizerDiscardEnable = false,
-        PolygonMode = PolygonMode.Fill,
-        LineWidth = 1,
-        CullMode = CullModeFlags.BackBit,
-        FrontFace = FrontFace.CounterClockwise,
-        DepthBiasEnable = false,
-      };
-
-      PipelineMultisampleStateCreateInfo multisampling = new()
-      {
-        SType = StructureType.PipelineMultisampleStateCreateInfo,
-        SampleShadingEnable = false,
-        RasterizationSamples = msaaSamples,
-      };
-
-      PipelineDepthStencilStateCreateInfo depthStencil = new()
-      {
-        SType = StructureType.PipelineDepthStencilStateCreateInfo,
-        DepthTestEnable = true,
-        DepthWriteEnable = true,
-        DepthCompareOp = CompareOp.Less,
-        DepthBoundsTestEnable = false,
-        StencilTestEnable = false,
-      };
-
-      PipelineColorBlendAttachmentState colorBlendAttachment = new()
-      {
-        ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
-        BlendEnable = false,
-      };
-
-      PipelineColorBlendStateCreateInfo colorBlending = new()
-      {
-        SType = StructureType.PipelineColorBlendStateCreateInfo,
-        LogicOpEnable = false,
-        LogicOp = LogicOp.Copy,
-        AttachmentCount = 1,
-        PAttachments = &colorBlendAttachment,
-      };
-
-      colorBlending.BlendConstants[0] = 0;
-      colorBlending.BlendConstants[1] = 0;
-      colorBlending.BlendConstants[2] = 0;
-      colorBlending.BlendConstants[3] = 0;
-
-      PipelineLayoutCreateInfo pipelineLayoutInfo = new()
-      {
-        SType = StructureType.PipelineLayoutCreateInfo,
-        PushConstantRangeCount = 0,
-        SetLayoutCount = 1,
-        PSetLayouts = descriptorSetLayoutPtr
-      };
-
-      if (vk!.CreatePipelineLayout(device, pipelineLayoutInfo, null, out pipelineLayout) != Result.Success)
-      {
-        throw new Exception("failed to create pipeline layout!");
-      }
-
-      GraphicsPipelineCreateInfo pipelineInfo = new()
-      {
-        SType = StructureType.GraphicsPipelineCreateInfo,
-        StageCount = 2,
-        PStages = shaderStages,
-        PVertexInputState = &vertexInputInfo,
-        PInputAssemblyState = &inputAssembly,
-        PViewportState = &viewportState,
-        PRasterizationState = &rasterizer,
-        PMultisampleState = &multisampling,
-        PDepthStencilState = &depthStencil,
-        PColorBlendState = &colorBlending,
-        Layout = pipelineLayout,
-        RenderPass = graphicsPipelineRenderPass.Pass,
-        Subpass = 0,
-        BasePipelineHandle = default
-      };
-
-      if (vk!.CreateGraphicsPipelines(device, default, 1, pipelineInfo, null, out graphicsPipeline) != Result.Success)
-      {
-        throw new Exception("failed to create graphics pipeline!");
-      }
-    }
-
-    vk!.DestroyShaderModule(device, fragShaderModule, null);
-    vk!.DestroyShaderModule(device, vertShaderModule, null);
-
-    SilkMarshal.Free((nint)vertShaderStageInfo.PName);
-    SilkMarshal.Free((nint)fragShaderStageInfo.PName);
+    gfxPipeline = new GraphicsPipeline(device, physicalDevice)
+      .SetVerteShader(vertShaderCode)
+      .SetFragmentShader(fragShaderCode)
+      .SetVertexInputState([.. (new List<VertexInputBindingDescription> { Vertex.GetBindingDescription() })], Vertex.GetAttributeDescriptions())
+      .SetViewport(swapChainExtent.Width, swapChainExtent.Height)
+      .SetScissor(swapChainExtent.Width, swapChainExtent.Height)
+      .SetRasterizationState()
+      .SetMultisampleState(msaaSamples)
+      .SetDepthStencilState()
+      .SetDescriptorSetLayout(descriptorSets[0].Layout)
+      .SetRenderPass(graphicsPipelineRenderPass)
+      .Allocate();
   }
 
   private void CreateRenderPass()
   {
-        graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
+    graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
       .AddColorAttachment(swapChainImageFormat, msaaSamples)
       .AddDepthAttachment(msaaSamples)
       .AddResolverAttachment(swapChainImageFormat)
