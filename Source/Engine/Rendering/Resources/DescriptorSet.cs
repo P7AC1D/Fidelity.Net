@@ -29,7 +29,7 @@ public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, 
       DstBinding = binding,
       DstArrayElement = 0,
       DescriptorType = DescriptorType.UniformBuffer,
-      DescriptorCount = 1,
+      DescriptorCount = 1,      
       PBufferInfo = &bufferInfo,
     });
 
@@ -112,6 +112,7 @@ public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, 
     for (int i = 0; i < writeDescriptorSets.Count; i++)
     {
       WriteDescriptorSet writeDescriptorSet = writeDescriptorSets[i];
+      writeDescriptorSet.DstSet = descriptorSet;
       writeDescriptorSets[i] = writeDescriptorSet;
     }
 
