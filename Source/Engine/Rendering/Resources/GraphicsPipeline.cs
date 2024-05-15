@@ -17,6 +17,8 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   private PipelineDepthStencilStateCreateInfo? depthStencilState;
   private DescriptorSetLayout? descriptorSetLayout;
   private PipelineLayout pipelineLayout;
+  private RenderPass renderPass;
+  private Pipeline graphicsPipeline;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
@@ -125,6 +127,12 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     return this;
   }
 
+  public GraphicsPipeline SetRenderPass(RenderPass renderPass)
+  {
+    this.renderPass = renderPass;
+    return this;
+  }
+
   public GraphicsPipeline Allocate()
   {
     ValidateInput();
@@ -180,6 +188,41 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
         throw new Exception("Failed to create pipeline layout.");
       }
 
+      var viewport = this.viewport!.Value;
+      var scissor = this.scissor!.Value;
+      PipelineViewportStateCreateInfo viewportState = new()
+      {
+        SType = StructureType.PipelineViewportStateCreateInfo,
+        ViewportCount = 1,
+        PViewports = &viewport,
+        ScissorCount = 1,
+        PScissors = &scissor,
+      };
+
+      var rasterizationState = this.rasterizationState!.Value;
+      var multisampleState = this.multisampleState!.Value;
+      var depthStencilState = this.depthStencilState!.Value;
+  
+      PipelineColorBlendAttachmentState colorBlendAttachment = new()
+      {
+        ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
+        BlendEnable = false,
+      };
+
+      PipelineColorBlendStateCreateInfo colorBlending = new()
+      {
+        SType = StructureType.PipelineColorBlendStateCreateInfo,
+        LogicOpEnable = false,
+        LogicOp = LogicOp.Copy,
+        AttachmentCount = 1,
+        PAttachments = &colorBlendAttachment,
+      };
+
+      colorBlending.BlendConstants[0] = 0;
+      colorBlending.BlendConstants[1] = 0;
+      colorBlending.BlendConstants[2] = 0;
+      colorBlending.BlendConstants[3] = 0;
+
       fixed (PipelineShaderStageCreateInfo* shaderStagesPtr = shaderStages.ToArray())
       {
         GraphicsPipelineCreateInfo pipelineInfo = new()
@@ -190,12 +233,12 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
           PVertexInputState = &vertexInputInfo,
           PInputAssemblyState = &inputAssembly,
           PViewportState = &viewportState,
-          PRasterizationState = &rasterizer,
-          PMultisampleState = &multisampling,
-          PDepthStencilState = &depthStencil,
+          PRasterizationState = &rasterizationState,
+          PMultisampleState = &multisampleState,
+          PDepthStencilState = &depthStencilState,
           PColorBlendState = &colorBlending,
           Layout = pipelineLayout,
-          RenderPass = graphicsPipelineRenderPass.Pass,
+          RenderPass = renderPass!.Pass,
           Subpass = 0,
           BasePipelineHandle = default
         };
@@ -271,6 +314,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     if (!descriptorSetLayout.HasValue)
     {
       throw new Exception("Descriptor set layout bindings must be set.");
+    }
+
+    if (renderPass == null)
+    {
+      throw new Exception("Render pass must be set.");
     }
   }
 
