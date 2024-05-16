@@ -19,4 +19,23 @@ public static class PhysicalDeviceExtensions
 
     throw new Exception("Failed to find suitable memory.");
   }
+
+  public static Format FindSupportedFormat(this PhysicalDevice physicalDevice, IEnumerable<Format> candidates, ImageTiling tiling, FormatFeatureFlags features)
+  {
+    Vk vk = Vk.GetApi();
+    foreach (var format in candidates)
+    {
+      vk!.GetPhysicalDeviceFormatProperties(physicalDevice, format, out var props);
+
+      if (tiling == ImageTiling.Linear && (props.LinearTilingFeatures & features) == features)
+      {
+        return format;
+      }
+      else if (tiling == ImageTiling.Optimal && (props.OptimalTilingFeatures & features) == features)
+      {
+        return format;
+      }
+    }
+    throw new Exception("Failed to find supported format!");
+  }
 }

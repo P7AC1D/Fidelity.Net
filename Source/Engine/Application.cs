@@ -13,6 +13,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
+using DescriptorSet = Silk.NET.Vulkan.DescriptorSet;
+using RenderPass = Silk.NET.Vulkan.RenderPass;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 using Texture = Fidelity.Rendering.Resources.Texture;
 
@@ -120,10 +122,10 @@ public unsafe class Application
   private Extent2D swapChainExtent;
   private ImageView[]? swapChainImageViews;
   private Framebuffer[]? swapChainFramebuffers;
-  private RenderPass renderPass;
   private DescriptorSetLayout descriptorSetLayout;
-  private PipelineLayout pipelineLayout;
-  private Pipeline graphicsPipeline;
+
+  private GraphicsPipeline graphicsPipeline;
+  private GraphicsRenderPass graphicsPipelineRenderPass;
 
   private GpuBuffer vertexBuffer, indexBuffer;
   private GpuBuffer[] uniformBuffers;
@@ -132,7 +134,7 @@ public unsafe class Application
   private DescriptorSet[]? descriptorSets;
 
   private Texture texture;
-  private Sampler textureSampler;
+  private TextureSampler textureSampler;
 
   private Texture colorImage;
   private Texture depthImage;
@@ -341,10 +343,7 @@ public unsafe class Application
     {
       vk!.FreeCommandBuffers(device, commandPool, (uint)commandBuffers!.Length, commandBuffersPtr);
     }
-
-    vk!.DestroyPipeline(device, graphicsPipeline, null);
-    vk!.DestroyPipelineLayout(device, pipelineLayout, null);
-    vk!.DestroyRenderPass(device, renderPass, null);
+    //vk!.DestroyRenderPass(device, renderPass, null);
 
     foreach (var imageView in swapChainImageViews!)
     {
@@ -551,11 +550,11 @@ public unsafe class Application
 
     texture = new Texture(device, physicalDevice);
     texture.Allocate(new Extent3D
-      {
-        Width = (uint)img.Width,
-        Height = (uint)img.Height,
-        Depth = 1
-      },
+    {
+      Width = (uint)img.Width,
+      Height = (uint)img.Height,
+      Depth = 1
+    },
       mipLevels,
       SampleCountFlags.Count1Bit,
       Format.R8G8B8A8Srgb,
@@ -589,35 +588,9 @@ public unsafe class Application
 
   private void CreateTextureSampler()
   {
-    vk!.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties properties);
-
-    SamplerCreateInfo samplerInfo = new()
-    {
-      SType = StructureType.SamplerCreateInfo,
-      MagFilter = Filter.Linear,
-      MinFilter = Filter.Linear,
-      AddressModeU = SamplerAddressMode.Repeat,
-      AddressModeV = SamplerAddressMode.Repeat,
-      AddressModeW = SamplerAddressMode.Repeat,
-      AnisotropyEnable = true,
-      MaxAnisotropy = properties.Limits.MaxSamplerAnisotropy,
-      BorderColor = BorderColor.IntOpaqueBlack,
-      UnnormalizedCoordinates = false,
-      CompareEnable = false,
-      CompareOp = CompareOp.Always,
-      MipmapMode = SamplerMipmapMode.Linear,
-      MinLod = 0,
-      MaxLod = mipLevels,
-      MipLodBias = 0,
-    };
-
-    fixed (Sampler* textureSamplerPtr = &textureSampler)
-    {
-      if (vk!.CreateSampler(device, samplerInfo, null, textureSamplerPtr) != Result.Success)
-      {
-        throw new Exception("failed to create texture sampler!");
-      }
-    }
+    textureSampler = new TextureSampler(device, physicalDevice)
+      .SetMipmapping(maxLod: mipLevels)
+      .Allocate();
   }
 
   private ImageView CreateImageView(Image image, Format format, ImageAspectFlags aspectFlags, uint mipLevels)
@@ -763,7 +736,7 @@ public unsafe class Application
       {
         ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
         ImageView = texture.ImageView,
-        Sampler = textureSampler,
+        Sampler = textureSampler.Sampler,
       };
 
       var descriptorWrites = new WriteDescriptorSet[]
@@ -822,7 +795,7 @@ public unsafe class Application
       DescriptorCount = 1,
       DescriptorType = DescriptorType.UniformBuffer,
       PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.VertexBit,
+      StageFlags = ShaderStageFlags.AllGraphics,
     };
 
     DescriptorSetLayoutBinding samplerLayoutBinding = new()
@@ -831,7 +804,7 @@ public unsafe class Application
       DescriptorCount = 1,
       DescriptorType = DescriptorType.CombinedImageSampler,
       PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.FragmentBit,
+      StageFlags = ShaderStageFlags.AllGraphics,
     };
 
     var bindings = new DescriptorSetLayoutBinding[] { uboLayoutBinding, samplerLayoutBinding };
@@ -892,48 +865,6 @@ public unsafe class Application
     vk!.BindBufferMemory(device, buffer, bufferMemory, 0);
   }
 
-  private void CopyBuffer(Buffer srcBuffer, Buffer dstBuffer, ulong size)
-  {
-    CommandBufferAllocateInfo allocateInfo = new()
-    {
-      SType = StructureType.CommandBufferAllocateInfo,
-      Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool,
-      CommandBufferCount = 1,
-    };
-
-    vk!.AllocateCommandBuffers(device, allocateInfo, out CommandBuffer commandBuffer);
-
-    CommandBufferBeginInfo beginInfo = new()
-    {
-      SType = StructureType.CommandBufferBeginInfo,
-      Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-    };
-
-    vk!.BeginCommandBuffer(commandBuffer, beginInfo);
-
-    BufferCopy copyRegion = new()
-    {
-      Size = size,
-    };
-
-    vk!.CmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, copyRegion);
-
-    vk!.EndCommandBuffer(commandBuffer);
-
-    SubmitInfo submitInfo = new()
-    {
-      SType = StructureType.SubmitInfo,
-      CommandBufferCount = 1,
-      PCommandBuffers = &commandBuffer,
-    };
-
-    vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
-    vk!.QueueWaitIdle(graphicsQueue);
-
-    vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
-  }
-
   private uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)
   {
     vk!.GetPhysicalDeviceMemoryProperties(physicalDevice, out PhysicalDeviceMemoryProperties memProperties);
@@ -985,7 +916,7 @@ public unsafe class Application
       RenderPassBeginInfo renderPassInfo = new()
       {
         SType = StructureType.RenderPassBeginInfo,
-        RenderPass = renderPass,
+        RenderPass = graphicsPipelineRenderPass.Pass,
         Framebuffer = swapChainFramebuffers[i],
         RenderArea =
                 {
@@ -1015,7 +946,7 @@ public unsafe class Application
         vk!.CmdBeginRenderPass(commandBuffers[i], &renderPassInfo, SubpassContents.Inline);
       }
 
-      vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline);
+      vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.Pipeline);
 
       var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
       var offsets = new ulong[] { 0 };
@@ -1028,7 +959,7 @@ public unsafe class Application
 
       vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
-      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, pipelineLayout, 0, 1, descriptorSets![i], 0, null);
+      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i], 0, null);
 
       vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
 
@@ -1038,7 +969,6 @@ public unsafe class Application
       {
         throw new Exception("failed to record command buffer!");
       }
-
     }
   }
 
@@ -1059,290 +989,27 @@ public unsafe class Application
     var vertShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
     var fragShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
 
-    var vertShaderModule = CreateShaderModule(vertShaderCode);
-    var fragShaderModule = CreateShaderModule(fragShaderCode);
-
-    PipelineShaderStageCreateInfo vertShaderStageInfo = new()
-    {
-      SType = StructureType.PipelineShaderStageCreateInfo,
-      Stage = ShaderStageFlags.VertexBit,
-      Module = vertShaderModule,
-      PName = (byte*)SilkMarshal.StringToPtr("main")
-    };
-
-    PipelineShaderStageCreateInfo fragShaderStageInfo = new()
-    {
-      SType = StructureType.PipelineShaderStageCreateInfo,
-      Stage = ShaderStageFlags.FragmentBit,
-      Module = fragShaderModule,
-      PName = (byte*)SilkMarshal.StringToPtr("main")
-    };
-
-    var shaderStages = stackalloc[]
-    {
-            vertShaderStageInfo,
-            fragShaderStageInfo
-        };
-
-    var bindingDescription = Vertex.GetBindingDescription();
-    var attributeDescriptions = Vertex.GetAttributeDescriptions();
-
-    fixed (VertexInputAttributeDescription* attributeDescriptionsPtr = attributeDescriptions)
-    fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
-    {
-
-      PipelineVertexInputStateCreateInfo vertexInputInfo = new()
-      {
-        SType = StructureType.PipelineVertexInputStateCreateInfo,
-        VertexBindingDescriptionCount = 1,
-        VertexAttributeDescriptionCount = (uint)attributeDescriptions.Length,
-        PVertexBindingDescriptions = &bindingDescription,
-        PVertexAttributeDescriptions = attributeDescriptionsPtr,
-      };
-
-      PipelineInputAssemblyStateCreateInfo inputAssembly = new()
-      {
-        SType = StructureType.PipelineInputAssemblyStateCreateInfo,
-        Topology = PrimitiveTopology.TriangleList,
-        PrimitiveRestartEnable = false,
-      };
-
-      Viewport viewport = new()
-      {
-        X = 0,
-        Y = 0,
-        Width = swapChainExtent.Width,
-        Height = swapChainExtent.Height,
-        MinDepth = 0,
-        MaxDepth = 1,
-      };
-
-      Rect2D scissor = new()
-      {
-        Offset = { X = 0, Y = 0 },
-        Extent = swapChainExtent,
-      };
-
-      PipelineViewportStateCreateInfo viewportState = new()
-      {
-        SType = StructureType.PipelineViewportStateCreateInfo,
-        ViewportCount = 1,
-        PViewports = &viewport,
-        ScissorCount = 1,
-        PScissors = &scissor,
-      };
-
-      PipelineRasterizationStateCreateInfo rasterizer = new()
-      {
-        SType = StructureType.PipelineRasterizationStateCreateInfo,
-        DepthClampEnable = false,
-        RasterizerDiscardEnable = false,
-        PolygonMode = PolygonMode.Fill,
-        LineWidth = 1,
-        CullMode = CullModeFlags.BackBit,
-        FrontFace = FrontFace.CounterClockwise,
-        DepthBiasEnable = false,
-      };
-
-      PipelineMultisampleStateCreateInfo multisampling = new()
-      {
-        SType = StructureType.PipelineMultisampleStateCreateInfo,
-        SampleShadingEnable = false,
-        RasterizationSamples = msaaSamples,
-      };
-
-      PipelineDepthStencilStateCreateInfo depthStencil = new()
-      {
-        SType = StructureType.PipelineDepthStencilStateCreateInfo,
-        DepthTestEnable = true,
-        DepthWriteEnable = true,
-        DepthCompareOp = CompareOp.Less,
-        DepthBoundsTestEnable = false,
-        StencilTestEnable = false,
-      };
-
-      PipelineColorBlendAttachmentState colorBlendAttachment = new()
-      {
-        ColorWriteMask = ColorComponentFlags.RBit | ColorComponentFlags.GBit | ColorComponentFlags.BBit | ColorComponentFlags.ABit,
-        BlendEnable = false,
-      };
-
-      PipelineColorBlendStateCreateInfo colorBlending = new()
-      {
-        SType = StructureType.PipelineColorBlendStateCreateInfo,
-        LogicOpEnable = false,
-        LogicOp = LogicOp.Copy,
-        AttachmentCount = 1,
-        PAttachments = &colorBlendAttachment,
-      };
-
-      colorBlending.BlendConstants[0] = 0;
-      colorBlending.BlendConstants[1] = 0;
-      colorBlending.BlendConstants[2] = 0;
-      colorBlending.BlendConstants[3] = 0;
-
-      PipelineLayoutCreateInfo pipelineLayoutInfo = new()
-      {
-        SType = StructureType.PipelineLayoutCreateInfo,
-        PushConstantRangeCount = 0,
-        SetLayoutCount = 1,
-        PSetLayouts = descriptorSetLayoutPtr
-      };
-
-      if (vk!.CreatePipelineLayout(device, pipelineLayoutInfo, null, out pipelineLayout) != Result.Success)
-      {
-        throw new Exception("failed to create pipeline layout!");
-      }
-
-      GraphicsPipelineCreateInfo pipelineInfo = new()
-      {
-        SType = StructureType.GraphicsPipelineCreateInfo,
-        StageCount = 2,
-        PStages = shaderStages,
-        PVertexInputState = &vertexInputInfo,
-        PInputAssemblyState = &inputAssembly,
-        PViewportState = &viewportState,
-        PRasterizationState = &rasterizer,
-        PMultisampleState = &multisampling,
-        PDepthStencilState = &depthStencil,
-        PColorBlendState = &colorBlending,
-        Layout = pipelineLayout,
-        RenderPass = renderPass,
-        Subpass = 0,
-        BasePipelineHandle = default
-      };
-
-      if (vk!.CreateGraphicsPipelines(device, default, 1, pipelineInfo, null, out graphicsPipeline) != Result.Success)
-      {
-        throw new Exception("failed to create graphics pipeline!");
-      }
-    }
-
-    vk!.DestroyShaderModule(device, fragShaderModule, null);
-    vk!.DestroyShaderModule(device, vertShaderModule, null);
-
-    SilkMarshal.Free((nint)vertShaderStageInfo.PName);
-    SilkMarshal.Free((nint)fragShaderStageInfo.PName);
+    graphicsPipeline = new GraphicsPipeline(device, physicalDevice)
+      .SetVerteShader(vertShaderCode)
+      .SetFragmentShader(fragShaderCode)
+      .SetVertexInputState([.. (new List<VertexInputBindingDescription> { Vertex.GetBindingDescription() })], Vertex.GetAttributeDescriptions())
+      .SetViewport(swapChainExtent.Width, swapChainExtent.Height)
+      .SetScissor(swapChainExtent.Width, swapChainExtent.Height)
+      .SetRasterizationState()
+      .SetMultisampleState(msaaSamples)
+      .SetDepthStencilState()
+      .SetDescriptorSetLayout(descriptorSetLayout)
+      .SetRenderPass(graphicsPipelineRenderPass)
+      .Allocate();
   }
 
   private void CreateRenderPass()
   {
-    AttachmentDescription colorAttachment = new()
-    {
-      Format = swapChainImageFormat,
-      Samples = msaaSamples,
-      LoadOp = AttachmentLoadOp.Clear,
-      StoreOp = AttachmentStoreOp.Store,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    AttachmentDescription depthAttachment = new()
-    {
-      Format = FindDepthFormat(),
-      Samples = msaaSamples,
-      LoadOp = AttachmentLoadOp.Clear,
-      StoreOp = AttachmentStoreOp.DontCare,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      StencilStoreOp = AttachmentStoreOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.DepthStencilAttachmentOptimal,
-    };
-
-    AttachmentDescription colorAttachmentResolve = new()
-    {
-      Format = swapChainImageFormat,
-      Samples = SampleCountFlags.Count1Bit,
-      LoadOp = AttachmentLoadOp.DontCare,
-      StoreOp = AttachmentStoreOp.Store,
-      StencilLoadOp = AttachmentLoadOp.DontCare,
-      StencilStoreOp = AttachmentStoreOp.DontCare,
-      InitialLayout = ImageLayout.Undefined,
-      FinalLayout = ImageLayout.PresentSrcKhr,
-    };
-
-    AttachmentReference colorAttachmentRef = new()
-    {
-      Attachment = 0,
-      Layout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    AttachmentReference depthAttachmentRef = new()
-    {
-      Attachment = 1,
-      Layout = ImageLayout.DepthStencilAttachmentOptimal,
-    };
-
-    AttachmentReference colorAttachmentResolveRef = new()
-    {
-      Attachment = 2,
-      Layout = ImageLayout.ColorAttachmentOptimal,
-    };
-
-    SubpassDescription subpass = new()
-    {
-      PipelineBindPoint = PipelineBindPoint.Graphics,
-      ColorAttachmentCount = 1,
-      PColorAttachments = &colorAttachmentRef,
-      PDepthStencilAttachment = &depthAttachmentRef,
-      PResolveAttachments = &colorAttachmentResolveRef,
-    };
-
-    SubpassDependency dependency = new()
-    {
-      SrcSubpass = Vk.SubpassExternal,
-      DstSubpass = 0,
-      SrcStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-      SrcAccessMask = 0,
-      DstStageMask = PipelineStageFlags.ColorAttachmentOutputBit | PipelineStageFlags.EarlyFragmentTestsBit,
-      DstAccessMask = AccessFlags.ColorAttachmentWriteBit | AccessFlags.DepthStencilAttachmentWriteBit
-    };
-
-    var attachments = new[] { colorAttachment, depthAttachment, colorAttachmentResolve };
-
-    fixed (AttachmentDescription* attachmentsPtr = attachments)
-    {
-      RenderPassCreateInfo renderPassInfo = new()
-      {
-        SType = StructureType.RenderPassCreateInfo,
-        AttachmentCount = (uint)attachments.Length,
-        PAttachments = attachmentsPtr,
-        SubpassCount = 1,
-        PSubpasses = &subpass,
-        DependencyCount = 1,
-        PDependencies = &dependency,
-      };
-
-      if (vk!.CreateRenderPass(device, renderPassInfo, null, out renderPass) != Result.Success)
-      {
-        throw new Exception("failed to create render pass!");
-      }
-    }
-  }
-
-  private ShaderModule CreateShaderModule(byte[] code)
-  {
-    ShaderModuleCreateInfo createInfo = new()
-    {
-      SType = StructureType.ShaderModuleCreateInfo,
-      CodeSize = (nuint)code.Length,
-    };
-
-    ShaderModule shaderModule;
-
-    fixed (byte* codePtr = code)
-    {
-      createInfo.PCode = (uint*)codePtr;
-
-      if (vk!.CreateShaderModule(device, createInfo, null, out shaderModule) != Result.Success)
-      {
-        throw new Exception();
-      }
-    }
-
-    return shaderModule;
-
+    graphicsPipelineRenderPass = new GraphicsRenderPass(device, physicalDevice)
+      .AddColorAttachment(swapChainImageFormat, msaaSamples)
+      .AddDepthAttachment(msaaSamples)
+      .AddResolverAttachment(swapChainImageFormat)
+      .Allocate();
   }
 
   private void CreateSurface()
@@ -1586,7 +1253,7 @@ public unsafe class Application
         FramebufferCreateInfo framebufferInfo = new()
         {
           SType = StructureType.FramebufferCreateInfo,
-          RenderPass = renderPass,
+          RenderPass = graphicsPipelineRenderPass.Pass,
           AttachmentCount = (uint)attachments.Length,
           PAttachments = attachmentsPtr,
           Width = swapChainExtent.Width,
