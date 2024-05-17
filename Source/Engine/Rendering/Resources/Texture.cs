@@ -8,11 +8,10 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
   private readonly Vk vk = Vk.GetApi();
   private DeviceMemory memory;
   private Image image;
-  private ImageView imageView;
   private bool initialized = false;
 
+  public ImageView ImageView { get; private set; }
   public Image Image => image;
-  public ImageView ImageView => imageView;
 
   public Texture Allocate(
     Extent3D extent,
@@ -71,26 +70,10 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
 
     vk!.BindImageMemory(device, image, memory, 0);
 
-    ImageViewCreateInfo createInfo = new()
-    {
-      SType = StructureType.ImageViewCreateInfo,
-      Image = image,
-      ViewType = ImageViewType.Type2D,
-      Format = format,
-      SubresourceRange =
-      {
-          AspectMask = imageAspectFlags,
-          BaseMipLevel = 0,
-          LevelCount = mipLevels,
-          BaseArrayLayer = 0,
-          LayerCount = 1,
-      }
-    };
-
-    if (vk!.CreateImageView(device, createInfo, null, out imageView) != Result.Success)
-    {
-      throw new Exception("Failed to create image view.");
-    }
+    ImageView = new ImageView(device)
+      .SetImage(image, format)
+      .SetRange(imageAspectFlags, 0, mipLevels, 0, 1)
+      .Allocate();
     initialized = true;
     return this;
   }
@@ -310,7 +293,6 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
   {
     if (disposing)
     {
-      vk!.DestroyImageView(device, imageView, null);
       vk!.DestroyImage(device, image, null);
       vk!.FreeMemory(device, memory, null);
     }

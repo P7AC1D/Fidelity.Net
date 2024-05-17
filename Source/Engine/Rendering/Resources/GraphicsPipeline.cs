@@ -17,7 +17,7 @@ public unsafe class GraphicsPipeline(Device device) : IDisposable
   private PipelineDepthStencilStateCreateInfo? depthStencilState;
   private DescriptorSetLayout? descriptorSetLayout;
   private PipelineLayout pipelineLayout;
-  private GraphicsRenderPass renderPass;
+  private RenderPass renderPass;
   private Pipeline graphicsPipeline;
   private bool isInitialized = false;
 
@@ -181,7 +181,7 @@ public unsafe class GraphicsPipeline(Device device) : IDisposable
     return this;
   }
 
-  public GraphicsPipeline SetRenderPass(GraphicsRenderPass renderPass)
+  public GraphicsPipeline SetRenderPass(RenderPass renderPass)
   {
     if (isInitialized)
     {

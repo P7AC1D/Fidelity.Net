@@ -14,6 +14,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
+using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
+using ImageView = Fidelity.Rendering.Resources.ImageView;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 using Texture = Fidelity.Rendering.Resources.Texture;
 
@@ -119,11 +121,11 @@ public unsafe class Application
   private Image[]? swapChainImages;
   private Format swapChainImageFormat;
   private Extent2D swapChainExtent;
-  private ImageView[]? swapChainImageViews;
-  private Framebuffer[]? swapChainFramebuffers;
+  private ImageView[] swapChainImageViews;
+  private Framebuffer[] swapChainFramebuffers;
 
   private GraphicsPipeline graphicsPipeline;
-  private GraphicsRenderPass graphicsPipelineRenderPass;
+  private Rendering.Resources.RenderPass graphicsPipelineRenderPass;
 
   private GpuBuffer vertexBuffer, indexBuffer;
   private GpuBuffer[] uniformBuffers;
@@ -331,22 +333,23 @@ public unsafe class Application
   {
     depthImage.Dispose();
     colorImage.Dispose();
-    texture.Dispose();
 
     foreach (var framebuffer in swapChainFramebuffers!)
     {
-      vk!.DestroyFramebuffer(device, framebuffer, null);
+      framebuffer.Dispose();
     }
 
     fixed (CommandBuffer* commandBuffersPtr = commandBuffers)
     {
       vk!.FreeCommandBuffers(device, commandPool, (uint)commandBuffers!.Length, commandBuffersPtr);
     }
-    //vk!.DestroyRenderPass(device, renderPass, null);
+    
+    graphicsPipeline.Dispose();
+    graphicsPipelineRenderPass.Dispose();
 
     foreach (var imageView in swapChainImageViews!)
     {
-      vk!.DestroyImageView(device, imageView, null);
+      imageView.Dispose();
     }
 
     khrSwapChain!.DestroySwapchain(device, swapChain, null);
@@ -367,11 +370,12 @@ public unsafe class Application
   private void CleanUp()
   {
     CleanUpSwapChain();
-    
-    descriptorSetLayout.Dispose();
 
-    vertexBuffer?.Dispose();
-    indexBuffer?.Dispose();
+    texture!.Dispose();
+    descriptorSetLayout!.Dispose();
+
+    vertexBuffer!.Dispose();
+    indexBuffer!.Dispose();
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -592,34 +596,6 @@ public unsafe class Application
       .Allocate();
   }
 
-  private ImageView CreateImageView(Image image, Format format, ImageAspectFlags aspectFlags, uint mipLevels)
-  {
-    ImageViewCreateInfo createInfo = new()
-    {
-      SType = StructureType.ImageViewCreateInfo,
-      Image = image,
-      ViewType = ImageViewType.Type2D,
-      Format = format,
-      SubresourceRange =
-                {
-                    AspectMask = aspectFlags,
-                    BaseMipLevel = 0,
-                    LevelCount = mipLevels,
-                    BaseArrayLayer = 0,
-                    LayerCount = 1,
-                }
-
-    };
-
-
-    if (vk!.CreateImageView(device, createInfo, null, out ImageView imageView) != Result.Success)
-    {
-      throw new Exception("failed to create image views!");
-    }
-
-    return imageView;
-  }
-
   private void CreateVertexBuffer()
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
@@ -787,7 +763,7 @@ public unsafe class Application
       {
         SType = StructureType.RenderPassBeginInfo,
         RenderPass = graphicsPipelineRenderPass.Pass,
-        Framebuffer = swapChainFramebuffers[i],
+        Framebuffer = swapChainFramebuffers[i].Buffer,
         RenderArea =
                 {
                     Offset = { X = 0, Y = 0 },
@@ -848,8 +824,10 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
-
-      swapChainImageViews[i] = CreateImageView(swapChainImages[i], swapChainImageFormat, ImageAspectFlags.ColorBit, 1);
+      swapChainImageViews[i] = new ImageView(device)
+        .SetImage(swapChainImages[i], swapChainImageFormat)
+        .SetRange(ImageAspectFlags.ColorBit)
+        .Allocate();
     }
   }
 
@@ -875,7 +853,7 @@ public unsafe class Application
 
   private void CreateRenderPass()
   {
-    graphicsPipelineRenderPass = new GraphicsRenderPass(device, physicalDevice)
+        graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
       .AddColorAttachment(swapChainImageFormat, msaaSamples)
       .AddDepthAttachment(msaaSamples)
       .AddResolverAttachment(swapChainImageFormat)
@@ -1113,29 +1091,15 @@ public unsafe class Application
   private void CreateFramebuffers()
   {
     swapChainFramebuffers = new Framebuffer[swapChainImageViews!.Length];
-
     for (int i = 0; i < swapChainImageViews.Length; i++)
     {
-      var attachments = new[] { colorImage.ImageView, depthImage.ImageView, swapChainImageViews[i] };
-
-      fixed (ImageView* attachmentsPtr = attachments)
-      {
-        FramebufferCreateInfo framebufferInfo = new()
-        {
-          SType = StructureType.FramebufferCreateInfo,
-          RenderPass = graphicsPipelineRenderPass.Pass,
-          AttachmentCount = (uint)attachments.Length,
-          PAttachments = attachmentsPtr,
-          Width = swapChainExtent.Width,
-          Height = swapChainExtent.Height,
-          Layers = 1,
-        };
-
-        if (vk!.CreateFramebuffer(device, framebufferInfo, null, out swapChainFramebuffers[i]) != Result.Success)
-        {
-          throw new Exception("failed to create framebuffer!");
-        }
-      }
+      swapChainFramebuffers[i] = new Framebuffer(device)
+        .AddAttachment(colorImage.ImageView)
+        .AddAttachment(depthImage.ImageView)
+        .AddAttachment(swapChainImageViews[i])
+        .SetRenderPass(graphicsPipelineRenderPass)
+        .SetBoundary(swapChainExtent.Width, swapChainExtent.Height)
+        .Allocate();
     }
   }
 

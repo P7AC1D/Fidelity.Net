@@ -116,7 +116,7 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool)
       DescriptorImageInfo imageInfo = new()
       {
         Sampler = textureSamplers[i].TextureSampler!.Sampler,
-        ImageView = textureSamplers[i].Texture!.ImageView,
+        ImageView = textureSamplers[i].Texture!.ImageView!.View,
         ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
       };
 
