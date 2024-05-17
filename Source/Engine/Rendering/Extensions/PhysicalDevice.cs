@@ -2,7 +2,7 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Extensions;
 
-public static class PhysicalDeviceExtensions
+public unsafe static class PhysicalDeviceExtensions
 {
   public static uint FindMemoryType(this PhysicalDevice physicalDevice, uint typeFilter, MemoryPropertyFlags properties)
   {

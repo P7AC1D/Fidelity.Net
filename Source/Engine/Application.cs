@@ -1,4 +1,5 @@
 using Fidelity.Rendering.Enums;
+using Fidelity.Rendering.Extensions;
 using Fidelity.Rendering.Resources;
 using Silk.NET.Assimp;
 using Silk.NET.Core;
@@ -1159,7 +1160,7 @@ public unsafe class Application
 
   private void CreateDepthResources()
   {
-    Format depthFormat = FindDepthFormat();
+    Format depthFormat = physicalDevice.FindSupportedFormat(new[] { Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint }, ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
 
     depthImage = new Texture(device, physicalDevice);
     depthImage.Allocate(
@@ -1176,30 +1177,6 @@ public unsafe class Application
       ImageUsageFlags.DepthStencilAttachmentBit,
       MemoryPropertyFlags.DeviceLocalBit,
       ImageAspectFlags.DepthBit);
-  }
-
-  private Format FindSupportedFormat(IEnumerable<Format> candidates, ImageTiling tiling, FormatFeatureFlags features)
-  {
-    foreach (var format in candidates)
-    {
-      vk!.GetPhysicalDeviceFormatProperties(physicalDevice, format, out var props);
-
-      if (tiling == ImageTiling.Linear && (props.LinearTilingFeatures & features) == features)
-      {
-        return format;
-      }
-      else if (tiling == ImageTiling.Optimal && (props.OptimalTilingFeatures & features) == features)
-      {
-        return format;
-      }
-    }
-
-    throw new Exception("failed to find supported format!");
-  }
-
-  private Format FindDepthFormat()
-  {
-    return FindSupportedFormat(new[] { Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint }, ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
   }
 
   private string[] GetRequiredExtensions()
