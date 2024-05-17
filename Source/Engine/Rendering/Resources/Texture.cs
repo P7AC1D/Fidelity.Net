@@ -90,7 +90,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
       throw new Exception("Texture has not been allocated.");
     }
 
-    CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
+    Silk.NET.Vulkan.CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
 
     ImageMemoryBarrier barrier = new()
     {
@@ -147,7 +147,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
       throw new Exception("Texture has not been allocated.");
     }
 
-    CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
+    Silk.NET.Vulkan.CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
 
     BufferImageCopy region = new()
     {
@@ -298,17 +298,17 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     }
   }
 
-  private CommandBuffer BeginSingleTimeCommands(CommandPool commandPool)
+  private Silk.NET.Vulkan.CommandBuffer BeginSingleTimeCommands(CommandPool commandPool)
   {
     CommandBufferAllocateInfo allocateInfo = new()
     {
       SType = StructureType.CommandBufferAllocateInfo,
       Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool,
+      CommandPool = commandPool.Pool,
       CommandBufferCount = 1,
     };
 
-    vk!.AllocateCommandBuffers(device, allocateInfo, out CommandBuffer commandBuffer);
+    vk!.AllocateCommandBuffers(device, allocateInfo, out Silk.NET.Vulkan.CommandBuffer commandBuffer);
 
     CommandBufferBeginInfo beginInfo = new()
     {
@@ -321,7 +321,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     return commandBuffer;
   }
 
-  private void EndSingleTimeCommands(CommandPool commandPool, CommandBuffer commandBuffer, Queue graphicsQueue)
+  private void EndSingleTimeCommands(CommandPool commandPool, Silk.NET.Vulkan.CommandBuffer commandBuffer, Queue graphicsQueue)
   {
     vk!.EndCommandBuffer(commandBuffer);
 
@@ -335,6 +335,6 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
     vk!.QueueWaitIdle(graphicsQueue);
 
-    vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
+    vk!.FreeCommandBuffers(device, commandPool.Pool, 1, commandBuffer);
   }
 }

@@ -1,4 +1,5 @@
 using Silk.NET.Vulkan;
+using Silk.NET.Vulkan.Extensions.KHR;
 
 namespace Fidelity.Rendering.Extensions;
 
@@ -37,5 +38,46 @@ public unsafe static class PhysicalDeviceExtensions
       }
     }
     throw new Exception("Failed to find supported format!");
+  }
+
+  public static QueueFamilyIndices FindQueueFamilies(this PhysicalDevice device, KhrSurface? khrSurface, SurfaceKHR surface)
+  {
+    Vk vk = Vk.GetApi();
+    var indices = new QueueFamilyIndices();
+
+    uint queueFamilityCount = 0;
+    vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, null);
+
+    var queueFamilies = new QueueFamilyProperties[queueFamilityCount];
+    fixed (QueueFamilyProperties* queueFamiliesPtr = queueFamilies)
+    {
+      vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, queueFamiliesPtr);
+    }
+
+
+    uint i = 0;
+    foreach (var queueFamily in queueFamilies)
+    {
+      if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
+      {
+        indices.GraphicsFamily = i;
+      }
+
+      khrSurface!.GetPhysicalDeviceSurfaceSupport(device, i, surface, out var presentSupport);
+
+      if (presentSupport)
+      {
+        indices.PresentFamily = i;
+      }
+
+      if (indices.IsComplete())
+      {
+        break;
+      }
+
+      i++;
+    }
+
+    return indices;
   }
 }

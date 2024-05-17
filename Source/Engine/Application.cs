@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
+using CommandPool = Fidelity.Rendering.Resources.CommandPool;
 using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
 using ImageView = Fidelity.Rendering.Resources.ImageView;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
@@ -21,7 +22,7 @@ using Texture = Fidelity.Rendering.Resources.Texture;
 
 namespace Fidelity;
 
-struct QueueFamilyIndices
+public struct QueueFamilyIndices
 {
   public uint? GraphicsFamily { get; set; }
   public uint? PresentFamily { get; set; }
@@ -141,7 +142,7 @@ public unsafe class Application
   private Texture depthImage;
 
   private CommandPool commandPool;
-  private CommandBuffer[]? commandBuffers;
+  private Silk.NET.Vulkan.CommandBuffer[]? commandBuffers;
 
   private Semaphore[]? imageAvailableSemaphores;
   private Semaphore[]? renderFinishedSemaphores;
@@ -339,11 +340,11 @@ public unsafe class Application
       framebuffer.Dispose();
     }
 
-    fixed (CommandBuffer* commandBuffersPtr = commandBuffers)
+    fixed (Silk.NET.Vulkan.CommandBuffer* commandBuffersPtr = commandBuffers)
     {
-      vk!.FreeCommandBuffers(device, commandPool, (uint)commandBuffers!.Length, commandBuffersPtr);
+      vk!.FreeCommandBuffers(device, commandPool.Pool, (uint)commandBuffers!.Length, commandBuffersPtr);
     }
-    
+
     graphicsPipeline.Dispose();
     graphicsPipelineRenderPass.Dispose();
 
@@ -384,7 +385,7 @@ public unsafe class Application
       vk!.DestroyFence(device, inFlightFences![i], null);
     }
 
-    vk!.DestroyCommandPool(device, commandPool, null);
+    commandPool.Dispose();
 
     vk!.DestroyDevice(device, null);
 
@@ -460,18 +461,8 @@ public unsafe class Application
 
   private void CreateCommandPool()
   {
-    var queueFamiliyIndicies = FindQueueFamilies(physicalDevice);
-
-    CommandPoolCreateInfo poolInfo = new()
-    {
-      SType = StructureType.CommandPoolCreateInfo,
-      QueueFamilyIndex = queueFamiliyIndicies.GraphicsFamily!.Value,
-    };
-
-    if (vk!.CreateCommandPool(device, poolInfo, null, out commandPool) != Result.Success)
-    {
-      throw new Exception("failed to create command pool!");
-    }
+    commandPool = new CommandPool(device)
+      .Allocate(physicalDevice.FindQueueFamilies(khrSurface, surface));
   }
 
   private void LoadModel()
@@ -728,24 +719,23 @@ public unsafe class Application
 
   private void CreateCommandBuffers()
   {
-    commandBuffers = new CommandBuffer[swapChainFramebuffers!.Length];
+    commandBuffers = new Silk.NET.Vulkan.CommandBuffer[swapChainFramebuffers!.Length];
 
     CommandBufferAllocateInfo allocInfo = new()
     {
       SType = StructureType.CommandBufferAllocateInfo,
-      CommandPool = commandPool,
+      CommandPool = commandPool.Pool,
       Level = CommandBufferLevel.Primary,
       CommandBufferCount = (uint)commandBuffers.Length,
     };
 
-    fixed (CommandBuffer* commandBuffersPtr = commandBuffers)
+    fixed (Silk.NET.Vulkan.CommandBuffer* commandBuffersPtr = commandBuffers)
     {
       if (vk!.AllocateCommandBuffers(device, allocInfo, commandBuffersPtr) != Result.Success)
       {
         throw new Exception("failed to allocate command buffers!");
       }
     }
-
 
     for (int i = 0; i < commandBuffers.Length; i++)
     {

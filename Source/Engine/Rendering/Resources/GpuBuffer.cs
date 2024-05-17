@@ -71,7 +71,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
       throw new Exception("Cannot write data. Buffer has not been allocated yet.");
     }
 
-    ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
+    ulong bufferSize = (ulong)Unsafe.SizeOf<T>();
     if (SizeBytes < bufferSize)
     {
       throw new Exception($"Insufficient memory allocated. Allocated: {SizeBytes} bytes. Requested: {bufferSize} bytes.");
@@ -114,11 +114,11 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     {
       SType = StructureType.CommandBufferAllocateInfo,
       Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool,
+      CommandPool = commandPool.Pool,
       CommandBufferCount = 1,
     };
 
-    vk!.AllocateCommandBuffers(device, allocateInfo, out CommandBuffer commandBuffer);
+    vk!.AllocateCommandBuffers(device, allocateInfo, out Silk.NET.Vulkan.CommandBuffer commandBuffer);
 
     CommandBufferBeginInfo beginInfo = new()
     {
@@ -147,7 +147,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
     vk!.QueueWaitIdle(graphicsQueue);
 
-    vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
+    vk!.FreeCommandBuffers(device, commandPool.Pool, 1, commandBuffer);
     return this;
   }
 
