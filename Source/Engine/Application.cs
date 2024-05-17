@@ -122,7 +122,6 @@ public unsafe class Application
   private Extent2D swapChainExtent;
   private ImageView[]? swapChainImageViews;
   private Framebuffer[]? swapChainFramebuffers;
-  private DescriptorSetLayout descriptorSetLayout;
 
   private GraphicsPipeline graphicsPipeline;
   private GraphicsRenderPass graphicsPipelineRenderPass;
@@ -217,13 +216,13 @@ public unsafe class Application
     CreateSwapChain();
     CreateImageViews();
     CreateRenderPass();
-    CreateGraphicsPipeline();
     CreateColorResources();
     CreateDepthResources();
     CreateFramebuffers();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
+    CreateGraphicsPipeline();
     CreateCommandBuffers();
 
     imagesInFlight = new Fence[swapChainImages!.Length];
@@ -369,7 +368,10 @@ public unsafe class Application
   {
     CleanUpSwapChain();
 
-    vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
+    foreach (var descriptorSet in descriptorSets)
+    {
+      descriptorSet.Dispose();
+    }
 
     vertexBuffer?.Dispose();
     indexBuffer?.Dispose();
@@ -408,8 +410,6 @@ public unsafe class Application
     CreateSwapChain();
     CreateImageViews();
     CreateRenderPass();
-    CreateDescriptorSetLayout();
-    CreateGraphicsPipeline();
     CreateCommandPool();
     CreateColorResources();
     CreateDepthResources();
@@ -422,6 +422,7 @@ public unsafe class Application
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSets();
+    CreateGraphicsPipeline();
     CreateCommandBuffers();
     CreateSyncObjects();
   }
@@ -726,45 +727,6 @@ public unsafe class Application
 
   }
 
-  private void CreateDescriptorSetLayout()
-  {
-    DescriptorSetLayoutBinding uboLayoutBinding = new()
-    {
-      Binding = 0,
-      DescriptorCount = 1,
-      DescriptorType = DescriptorType.UniformBuffer,
-      PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.AllGraphics,
-    };
-
-    DescriptorSetLayoutBinding samplerLayoutBinding = new()
-    {
-      Binding = 1,
-      DescriptorCount = 1,
-      DescriptorType = DescriptorType.CombinedImageSampler,
-      PImmutableSamplers = null,
-      StageFlags = ShaderStageFlags.AllGraphics,
-    };
-
-    var bindings = new DescriptorSetLayoutBinding[] { uboLayoutBinding, samplerLayoutBinding };
-
-    fixed (DescriptorSetLayoutBinding* bindingsPtr = bindings)
-    fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
-    {
-      DescriptorSetLayoutCreateInfo layoutInfo = new()
-      {
-        SType = StructureType.DescriptorSetLayoutCreateInfo,
-        BindingCount = (uint)bindings.Length,
-        PBindings = bindingsPtr,
-      };
-
-      if (vk!.CreateDescriptorSetLayout(device, layoutInfo, null, descriptorSetLayoutPtr) != Result.Success)
-      {
-        throw new Exception("failed to create descriptor set layout!");
-      }
-    }
-  }
-
   private void CreateBuffer(ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties, ref Buffer buffer, ref DeviceMemory bufferMemory)
   {
     BufferCreateInfo bufferInfo = new()
@@ -937,7 +899,7 @@ public unsafe class Application
       .SetRasterizationState()
       .SetMultisampleState(msaaSamples)
       .SetDepthStencilState()
-      .SetDescriptorSetLayout(descriptorSetLayout)
+      .SetDescriptorSetLayout(descriptorSets![0]!.Layout)
       .SetRenderPass(graphicsPipelineRenderPass)
       .Allocate();
   }
