@@ -110,44 +110,23 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
 
   public GpuBuffer CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
   {
-    CommandBufferAllocateInfo allocateInfo = new()
-    {
-      SType = StructureType.CommandBufferAllocateInfo,
-      Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool.Pool,
-      CommandBufferCount = 1,
-    };
+    CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer()
+      .Begin()
+      .CopyBuffer(this, destination, sizeBytes)
+      .End();
 
-    vk!.AllocateCommandBuffers(device, allocateInfo, out Silk.NET.Vulkan.CommandBuffer commandBuffer);
-
-    CommandBufferBeginInfo beginInfo = new()
-    {
-      SType = StructureType.CommandBufferBeginInfo,
-      Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-    };
-
-    vk!.BeginCommandBuffer(commandBuffer, beginInfo);
-
-    BufferCopy copyRegion = new()
-    {
-      Size = sizeBytes,
-    };
-
-    vk!.CmdCopyBuffer(commandBuffer, Buffer, destination!.Buffer, 1, copyRegion);
-
-    vk!.EndCommandBuffer(commandBuffer);
-
+    var cmdBuf = commandBuffer.Buffer;
     SubmitInfo submitInfo = new()
     {
       SType = StructureType.SubmitInfo,
       CommandBufferCount = 1,
-      PCommandBuffers = &commandBuffer,
+      PCommandBuffers = &cmdBuf,
     };
 
     vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
     vk!.QueueWaitIdle(graphicsQueue);
 
-    vk!.FreeCommandBuffers(device, commandPool.Pool, 1, commandBuffer);
+    commandPool.FreeCommandBuffer(commandBuffer);
     return this;
   }
 
