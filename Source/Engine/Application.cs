@@ -341,7 +341,7 @@ public unsafe class Application
       framebuffer.Dispose();
     }
 
-    commandPool.FreeCommandBuffers();
+    commandPool.FreeCommandBuffers(commandBuffers);
 
     graphicsPipeline.Dispose();
     graphicsPipelineRenderPass.Dispose();
