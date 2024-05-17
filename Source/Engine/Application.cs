@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
+using CommandBuffer = Fidelity.Rendering.Resources.CommandBuffer;
 using CommandPool = Fidelity.Rendering.Resources.CommandPool;
 using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
 using ImageView = Fidelity.Rendering.Resources.ImageView;
@@ -142,7 +143,7 @@ public unsafe class Application
   private Texture depthImage;
 
   private CommandPool commandPool;
-  private Silk.NET.Vulkan.CommandBuffer[]? commandBuffers;
+  private CommandBuffer[] commandBuffers;
 
   private Semaphore[]? imageAvailableSemaphores;
   private Semaphore[]? renderFinishedSemaphores;
@@ -264,7 +265,7 @@ public unsafe class Application
     var waitSemaphores = stackalloc[] { imageAvailableSemaphores[currentFrame] };
     var waitStages = stackalloc[] { PipelineStageFlags.ColorAttachmentOutputBit };
 
-    var buffer = commandBuffers![imageIndex];
+    var buffer = commandBuffers![imageIndex]!.Buffer;
 
     submitInfo = submitInfo with
     {
@@ -340,10 +341,7 @@ public unsafe class Application
       framebuffer.Dispose();
     }
 
-    fixed (Silk.NET.Vulkan.CommandBuffer* commandBuffersPtr = commandBuffers)
-    {
-      vk!.FreeCommandBuffers(device, commandPool.Pool, (uint)commandBuffers!.Length, commandBuffersPtr);
-    }
+    commandPool.FreeCommandBuffers();
 
     graphicsPipeline.Dispose();
     graphicsPipelineRenderPass.Dispose();
@@ -462,7 +460,7 @@ public unsafe class Application
   private void CreateCommandPool()
   {
     commandPool = new CommandPool(device)
-      .Allocate(physicalDevice.FindQueueFamilies(khrSurface, surface));
+      .Create(physicalDevice.FindQueueFamilies(khrSurface, surface));
   }
 
   private void LoadModel()
@@ -719,23 +717,7 @@ public unsafe class Application
 
   private void CreateCommandBuffers()
   {
-    commandBuffers = new Silk.NET.Vulkan.CommandBuffer[swapChainFramebuffers!.Length];
-
-    CommandBufferAllocateInfo allocInfo = new()
-    {
-      SType = StructureType.CommandBufferAllocateInfo,
-      CommandPool = commandPool.Pool,
-      Level = CommandBufferLevel.Primary,
-      CommandBufferCount = (uint)commandBuffers.Length,
-    };
-
-    fixed (Silk.NET.Vulkan.CommandBuffer* commandBuffersPtr = commandBuffers)
-    {
-      if (vk!.AllocateCommandBuffers(device, allocInfo, commandBuffersPtr) != Result.Success)
-      {
-        throw new Exception("failed to allocate command buffers!");
-      }
-    }
+    commandBuffers = commandPool.AllocateCommandBuffers((uint)swapChainFramebuffers!.Length);
 
     for (int i = 0; i < commandBuffers.Length; i++)
     {
@@ -744,7 +726,7 @@ public unsafe class Application
         SType = StructureType.CommandBufferBeginInfo,
       };
 
-      if (vk!.BeginCommandBuffer(commandBuffers[i], beginInfo) != Result.Success)
+      if (vk!.BeginCommandBuffer(commandBuffers[i]!.Buffer, beginInfo) != Result.Success)
       {
         throw new Exception("failed to begin recording command buffer!");
       }
@@ -779,10 +761,10 @@ public unsafe class Application
         renderPassInfo.ClearValueCount = (uint)clearValues.Length;
         renderPassInfo.PClearValues = clearValuesPtr;
 
-        vk!.CmdBeginRenderPass(commandBuffers[i], &renderPassInfo, SubpassContents.Inline);
+        vk!.CmdBeginRenderPass(commandBuffers[i]!.Buffer, &renderPassInfo, SubpassContents.Inline);
       }
 
-      vk!.CmdBindPipeline(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.Pipeline);
+      vk!.CmdBindPipeline(commandBuffers[i]!.Buffer, PipelineBindPoint.Graphics, graphicsPipeline.Pipeline);
 
       var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
       var offsets = new ulong[] { 0 };
@@ -790,18 +772,18 @@ public unsafe class Application
       fixed (ulong* offsetsPtr = offsets)
       fixed (Buffer* vertexBuffersPtr = vertexBuffers)
       {
-        vk!.CmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersPtr, offsetsPtr);
+        vk!.CmdBindVertexBuffers(commandBuffers[i]!.Buffer, 0, 1, vertexBuffersPtr, offsetsPtr);
       }
 
-      vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
+      vk!.CmdBindIndexBuffer(commandBuffers[i]!.Buffer, indexBuffer.Buffer, 0, IndexType.Uint32);
 
-      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
+      vk!.CmdBindDescriptorSets(commandBuffers[i]!.Buffer, PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
 
-      vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
+      vk!.CmdDrawIndexed(commandBuffers[i]!.Buffer, (uint)indices!.Length, 1, 0, 0, 0);
 
-      vk!.CmdEndRenderPass(commandBuffers[i]);
+      vk!.CmdEndRenderPass(commandBuffers[i]!.Buffer);
 
-      if (vk!.EndCommandBuffer(commandBuffers[i]) != Result.Success)
+      if (vk!.EndCommandBuffer(commandBuffers[i]!.Buffer) != Result.Success)
       {
         throw new Exception("failed to record command buffer!");
       }
