@@ -721,72 +721,15 @@ public unsafe class Application
 
     for (int i = 0; i < commandBuffers.Length; i++)
     {
-      CommandBufferBeginInfo beginInfo = new()
-      {
-        SType = StructureType.CommandBufferBeginInfo,
-      };
-
-      if (vk!.BeginCommandBuffer(commandBuffers[i]!.Buffer, beginInfo) != Result.Success)
-      {
-        throw new Exception("failed to begin recording command buffer!");
-      }
-
-      RenderPassBeginInfo renderPassInfo = new()
-      {
-        SType = StructureType.RenderPassBeginInfo,
-        RenderPass = graphicsPipelineRenderPass.Pass,
-        Framebuffer = swapChainFramebuffers[i].Buffer,
-        RenderArea =
-                {
-                    Offset = { X = 0, Y = 0 },
-                    Extent = swapChainExtent,
-                }
-      };
-
-      var clearValues = new ClearValue[]
-      {
-        new()
-        {
-            Color = new (){ Float32_0 = 0, Float32_1 = 0, Float32_2 = 0, Float32_3 = 1 },
-        },
-        new()
-        {
-            DepthStencil = new () { Depth = 1, Stencil = 0 }
-        }
-      };
-
-
-      fixed (ClearValue* clearValuesPtr = clearValues)
-      {
-        renderPassInfo.ClearValueCount = (uint)clearValues.Length;
-        renderPassInfo.PClearValues = clearValuesPtr;
-
-        vk!.CmdBeginRenderPass(commandBuffers[i]!.Buffer, &renderPassInfo, SubpassContents.Inline);
-      }
-
-      vk!.CmdBindPipeline(commandBuffers[i]!.Buffer, PipelineBindPoint.Graphics, graphicsPipeline.Pipeline);
-
-      var vertexBuffers = new Buffer[] { vertexBuffer.Buffer };
-      var offsets = new ulong[] { 0 };
-
-      fixed (ulong* offsetsPtr = offsets)
-      fixed (Buffer* vertexBuffersPtr = vertexBuffers)
-      {
-        vk!.CmdBindVertexBuffers(commandBuffers[i]!.Buffer, 0, 1, vertexBuffersPtr, offsetsPtr);
-      }
-
-      vk!.CmdBindIndexBuffer(commandBuffers[i]!.Buffer, indexBuffer.Buffer, 0, IndexType.Uint32);
-
-      vk!.CmdBindDescriptorSets(commandBuffers[i]!.Buffer, PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
-
-      vk!.CmdDrawIndexed(commandBuffers[i]!.Buffer, (uint)indices!.Length, 1, 0, 0, 0);
-
-      vk!.CmdEndRenderPass(commandBuffers[i]!.Buffer);
-
-      if (vk!.EndCommandBuffer(commandBuffers[i]!.Buffer) != Result.Success)
-      {
-        throw new Exception("failed to record command buffer!");
-      }
+      commandBuffers[i].Begin()
+        .BeginRenderPass(graphicsPipelineRenderPass, swapChainFramebuffers[i], swapChainExtent)
+        .BindGraphicsPipeline(graphicsPipeline)
+        .BindVertexBuffer(vertexBuffer)
+        .BindIndexBuffer(indexBuffer)
+        .BindDescriptorSet(graphicsPipeline, descriptorSets![i])
+        .DrawIndexed((uint)indices!.Length)
+        .EndRenderPass()
+        .End();
     }
   }
 

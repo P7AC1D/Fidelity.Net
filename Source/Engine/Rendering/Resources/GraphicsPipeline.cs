@@ -22,7 +22,7 @@ public unsafe class GraphicsPipeline(Device device) : IDisposable
   private bool isInitialized = false;
 
   public Pipeline Pipeline => graphicsPipeline;
-  public PipelineLayout PipelineLayout => pipelineLayout;
+  public PipelineLayout Layout => pipelineLayout;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
