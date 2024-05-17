@@ -131,7 +131,7 @@ public unsafe class Application
   private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
-  private DescriptorSet[]? descriptorSets;
+  private Rendering.Resources.DescriptorSet[]? descriptorSets;
 
   private Texture texture;
   private TextureSampler textureSampler;
@@ -698,75 +698,14 @@ public unsafe class Application
 
   private void CreateDescriptorSets()
   {
-    var layouts = new DescriptorSetLayout[swapChainImages!.Length];
-    Array.Fill(layouts, descriptorSetLayout);
-
-    fixed (DescriptorSetLayout* layoutsPtr = layouts)
+    descriptorSets = new Rendering.Resources.DescriptorSet[swapChainImages!.Length];
+    for (int i = 0; i < swapChainImages!.Length; i++)
     {
-      DescriptorSetAllocateInfo allocateInfo = new()
-      {
-        SType = StructureType.DescriptorSetAllocateInfo,
-        DescriptorPool = descriptorPool,
-        DescriptorSetCount = (uint)swapChainImages!.Length,
-        PSetLayouts = layoutsPtr,
-      };
-
-      descriptorSets = new DescriptorSet[swapChainImages.Length];
-      fixed (DescriptorSet* descriptorSetsPtr = descriptorSets)
-      {
-        if (vk!.AllocateDescriptorSets(device, allocateInfo, descriptorSetsPtr) != Result.Success)
-        {
-          throw new Exception("failed to allocate descriptor sets!");
-        }
-      }
-    }
-
-
-    for (int i = 0; i < swapChainImages.Length; i++)
-    {
-      DescriptorBufferInfo bufferInfo = new()
-      {
-        Buffer = uniformBuffers![i].Buffer,
-        Offset = 0,
-        Range = (ulong)Unsafe.SizeOf<UniformBufferObject>(),
-
-      };
-
-      DescriptorImageInfo imageInfo = new()
-      {
-        ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-        ImageView = texture.ImageView,
-        Sampler = textureSampler.Sampler,
-      };
-
-      var descriptorWrites = new WriteDescriptorSet[]
-      {
-        new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = descriptorSets[i],
-            DstBinding = 0,
-            DstArrayElement = 0,
-            DescriptorType = DescriptorType.UniformBuffer,
-            DescriptorCount = 1,
-            PBufferInfo = &bufferInfo,
-        },
-        new()
-        {
-            SType = StructureType.WriteDescriptorSet,
-            DstSet = descriptorSets[i],
-            DstBinding = 1,
-            DstArrayElement = 0,
-            DescriptorType = DescriptorType.CombinedImageSampler,
-            DescriptorCount = 1,
-            PImageInfo = &imageInfo,
-        }
-      };
-
-      fixed (WriteDescriptorSet* descriptorWritesPtr = descriptorWrites)
-      {
-        vk!.UpdateDescriptorSets(device, (uint)descriptorWrites.Length, descriptorWritesPtr, 0, null);
-      }
+      descriptorSets[i] = new Rendering.Resources.DescriptorSet(device, descriptorPool)
+        .AddUniformBuffer(uniformBuffers![i], 0)
+        .AddTexureSampler(texture, textureSampler, 1)
+        .Allocate()
+        .Update();
     }
   }
 
@@ -959,7 +898,7 @@ public unsafe class Application
 
       vk!.CmdBindIndexBuffer(commandBuffers[i], indexBuffer.Buffer, 0, IndexType.Uint32);
 
-      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i], 0, null);
+      vk!.CmdBindDescriptorSets(commandBuffers[i], PipelineBindPoint.Graphics, graphicsPipeline.PipelineLayout, 0, 1, descriptorSets![i].Set, 0, null);
 
       vk!.CmdDrawIndexed(commandBuffers[i], (uint)indices!.Length, 1, 0, 0, 0);
 

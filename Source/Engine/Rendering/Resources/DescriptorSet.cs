@@ -2,11 +2,11 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, DescriptorPool descriptorPool) : IDisposable
+public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
-  private IList<WriteDescriptorSet> writeDescriptorSets = new List<WriteDescriptorSet>();
-  private IList<DescriptorSetLayoutBinding> descriptorSetLayoutBindings = new List<DescriptorSetLayoutBinding>();
+  private IList<(GpuBuffer Buffer, uint Binding)> uniformBuffers = [];
+  private IList<(Texture Texture, TextureSampler TextureSampler, uint Binding)> textureSamplers = [];
   private Silk.NET.Vulkan.DescriptorSet descriptorSet;
   private DescriptorSetLayout descriptorSetLayout;
   private bool isInitialized = false;
@@ -16,77 +16,69 @@ public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, 
 
   public DescriptorSet AddUniformBuffer(GpuBuffer gpuBuffer, uint binding)
   {
-    DescriptorBufferInfo bufferInfo = new()
+    if (isInitialized)
     {
-      Buffer = gpuBuffer!.Buffer,
-      Offset = 0,
-      Range = gpuBuffer.SizeBytes,
-    };
+      throw new Exception("DescriptorSet has already been allocated.");
+    }
 
-    writeDescriptorSets.Add(new WriteDescriptorSet
-    {
-      SType = StructureType.WriteDescriptorSet,
-      DstBinding = binding,
-      DstArrayElement = 0,
-      DescriptorType = DescriptorType.UniformBuffer,
-      DescriptorCount = 1,      
-      PBufferInfo = &bufferInfo,
-    });
-
-    descriptorSetLayoutBindings.Add(new DescriptorSetLayoutBinding
-    {
-      Binding = binding,
-      DescriptorType = DescriptorType.UniformBuffer,
-      DescriptorCount = 1,
-      StageFlags = ShaderStageFlags.AllGraphics,
-    });
+    uniformBuffers.Add((gpuBuffer, binding));
     return this;
   }
 
   public DescriptorSet AddTexureSampler(Texture texture, TextureSampler textureSampler, uint binding)
   {
-    DescriptorImageInfo imageInfo = new()
+    if (isInitialized)
     {
-      ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
-      ImageView = texture.ImageView,
-      Sampler = textureSampler.Sampler,
-    };
+      throw new Exception("DescriptorSet has already been allocated.");
+    }
 
-    writeDescriptorSets.Add(new WriteDescriptorSet
-    {
-      SType = StructureType.WriteDescriptorSet,
-      DstBinding = binding,
-      DstArrayElement = 0,
-      DescriptorType = DescriptorType.CombinedImageSampler,
-      DescriptorCount = 1,
-      PImageInfo = &imageInfo,
-    });
-
-    descriptorSetLayoutBindings.Add(new DescriptorSetLayoutBinding
-    {
-      Binding = binding,
-      DescriptorType = DescriptorType.CombinedImageSampler,
-      DescriptorCount = 1,
-      StageFlags = ShaderStageFlags.AllGraphics,
-    });
+    textureSamplers.Add((texture, textureSampler, binding));
     return this;
   }
 
   public DescriptorSet Allocate()
   {
+    if (isInitialized)
+    {
+      throw new Exception("DescriptorSet has already been allocated.");
+    }
+
+    DescriptorSetLayoutBinding[] descriptorSetLayoutBindings = new DescriptorSetLayoutBinding[uniformBuffers.Count + textureSamplers.Count];
+    for (int i = 0; i < uniformBuffers.Count; i++)
+    {
+      descriptorSetLayoutBindings[i] = new DescriptorSetLayoutBinding
+      {
+        Binding = uniformBuffers[i].Binding,
+        DescriptorType = DescriptorType.UniformBuffer,
+        DescriptorCount = 1,
+        StageFlags = ShaderStageFlags.AllGraphics,
+      };
+    }
+
+    for (int i = 0; i < textureSamplers.Count; i++)
+    {
+      descriptorSetLayoutBindings[i + uniformBuffers.Count] = new DescriptorSetLayoutBinding
+      {
+        Binding = textureSamplers[i].Binding,
+        DescriptorType = DescriptorType.CombinedImageSampler,
+        DescriptorCount = 1,
+        StageFlags = ShaderStageFlags.AllGraphics,
+      };
+    }
+
     fixed (DescriptorSetLayoutBinding* bindingsPtr = descriptorSetLayoutBindings.ToArray())
     fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
     {
       DescriptorSetLayoutCreateInfo layoutInfo = new()
       {
         SType = StructureType.DescriptorSetLayoutCreateInfo,
-        BindingCount = (uint)descriptorSetLayoutBindings.Count,
+        BindingCount = (uint)descriptorSetLayoutBindings.Length,
         PBindings = bindingsPtr,
       };
 
       if (vk!.CreateDescriptorSetLayout(device, layoutInfo, null, descriptorSetLayoutPtr) != Result.Success)
       {
-        throw new Exception("Failed to create descriptor set layout.");
+        throw new Exception("Failed to create DescriptorSetLayout.");
       }
     }
 
@@ -104,16 +96,9 @@ public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, 
       {
         if (vk!.AllocateDescriptorSets(device, allocateInfo, descriptorSetsPtr) != Result.Success)
         {
-          throw new Exception("Failed to allocate descriptor set.");
+          throw new Exception("Failed to allocate DescriptorSet.");
         }
       }
-    }
-
-    for (int i = 0; i < writeDescriptorSets.Count; i++)
-    {
-      WriteDescriptorSet writeDescriptorSet = writeDescriptorSets[i];
-      writeDescriptorSet.DstSet = descriptorSet;
-      writeDescriptorSets[i] = writeDescriptorSet;
     }
 
     isInitialized = true;
@@ -127,10 +112,55 @@ public unsafe class DescriptorSet(Device device, PhysicalDevice physicalDevice, 
       throw new Exception("DescriptorSet must be allocated before updating.");
     }
 
+    WriteDescriptorSet[] writeDescriptorSets = new WriteDescriptorSet[uniformBuffers.Count + textureSamplers.Count];
+
+    for (int i = 0; i < uniformBuffers.Count; i++)
+    {
+      DescriptorBufferInfo bufferInfo = new()
+      {
+        Buffer = uniformBuffers[i].Buffer!.Buffer,
+        Offset = 0,
+        Range = uniformBuffers[i]!.Buffer!.SizeBytes,
+      };
+
+      writeDescriptorSets[i] = new WriteDescriptorSet
+      {
+        SType = StructureType.WriteDescriptorSet,
+        DstBinding = uniformBuffers[i]!.Binding,
+        DstArrayElement = 0,
+        DstSet = descriptorSet,
+        DescriptorType = DescriptorType.UniformBuffer,
+        DescriptorCount = 1,
+        PBufferInfo = &bufferInfo,
+      };
+    }
+
+    for (int i = 0; i < textureSamplers.Count; i++)
+    {
+      DescriptorImageInfo imageInfo = new()
+      {
+        Sampler = textureSamplers[i].TextureSampler!.Sampler,
+        ImageView = textureSamplers[i].Texture!.ImageView,
+        ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
+      };
+
+      writeDescriptorSets[i + uniformBuffers.Count] = new WriteDescriptorSet
+      {
+        SType = StructureType.WriteDescriptorSet,
+        DstBinding = textureSamplers[i].Binding,
+        DstArrayElement = 0,
+        DstSet = descriptorSet,
+        DescriptorType = DescriptorType.CombinedImageSampler,
+        DescriptorCount = 1,
+        PImageInfo = &imageInfo,
+      };
+    }
+
     fixed (WriteDescriptorSet* descriptorWritesPtr = writeDescriptorSets.ToArray())
     {
-      vk!.UpdateDescriptorSets(device, (uint)writeDescriptorSets.Count, descriptorWritesPtr, 0, null);
+      vk!.UpdateDescriptorSets(device, (uint)writeDescriptorSets.Length, descriptorWritesPtr, 0, null);
     }
+
     return this;
   }
 
