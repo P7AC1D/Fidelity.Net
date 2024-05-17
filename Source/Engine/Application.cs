@@ -13,8 +13,6 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using Buffer = Silk.NET.Vulkan.Buffer;
-using DescriptorSet = Silk.NET.Vulkan.DescriptorSet;
-using RenderPass = Silk.NET.Vulkan.RenderPass;
 using Semaphore = Silk.NET.Vulkan.Semaphore;
 using Texture = Fidelity.Rendering.Resources.Texture;
 
@@ -131,6 +129,7 @@ public unsafe class Application
 
   private DescriptorPool descriptorPool;
   private Rendering.Resources.DescriptorSet[]? descriptorSets;
+  private Rendering.Resources.DescriptorSetLayout descriptorSetLayout;
 
   private Texture texture;
   private TextureSampler textureSampler;
@@ -367,11 +366,8 @@ public unsafe class Application
   private void CleanUp()
   {
     CleanUpSwapChain();
-
-    foreach (var descriptorSet in descriptorSets)
-    {
-      descriptorSet.Dispose();
-    }
+    
+    descriptorSetLayout.Dispose();
 
     vertexBuffer?.Dispose();
     indexBuffer?.Dispose();
@@ -421,6 +417,7 @@ public unsafe class Application
     CreateIndexBuffer();
     CreateUniformBuffers();
     CreateDescriptorPool();
+    CreateDescriptorSetLayout();
     CreateDescriptorSets();
     CreateGraphicsPipeline();
     CreateCommandBuffers();
@@ -543,30 +540,30 @@ public unsafe class Application
     ulong imageSize = (ulong)(img.Width * img.Height * img.PixelType.BitsPerPixel / 8);
     mipLevels = (uint)(Math.Floor(Math.Log2(Math.Max(img.Width, img.Height))) + 1);
 
-    using GpuBuffer stagingBuffer = new GpuBuffer(device, physicalDevice);
-    stagingBuffer.Allocate(BufferType.Staging, imageSize);
+    using GpuBuffer stagingBuffer = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Staging, imageSize);
+
     void* mappedData = stagingBuffer.MapRange(0, imageSize);
     img.CopyPixelDataTo(new Span<byte>(mappedData, (int)imageSize));
     stagingBuffer.Unmap();
 
-    texture = new Texture(device, physicalDevice);
-    texture.Allocate(new Extent3D
-    {
-      Width = (uint)img.Width,
-      Height = (uint)img.Height,
-      Depth = 1
-    },
-      mipLevels,
-      SampleCountFlags.Count1Bit,
-      Format.R8G8B8A8Srgb,
-      ImageTiling.Optimal,
-      ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-      MemoryPropertyFlags.DeviceLocalBit,
-      ImageAspectFlags.ColorBit);
-
-    texture.TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue);
-    texture.CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue);
-    texture.GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
+    texture = new Texture(device, physicalDevice)
+      .Allocate(new Extent3D
+      {
+        Width = (uint)img.Width,
+        Height = (uint)img.Height,
+        Depth = 1
+      },
+        mipLevels,
+        SampleCountFlags.Count1Bit,
+        Format.R8G8B8A8Srgb,
+        ImageTiling.Optimal,
+        ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
+        MemoryPropertyFlags.DeviceLocalBit,
+        ImageAspectFlags.ColorBit)
+      .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue)
+      .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue)
+      .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
   }
 
   private SampleCountFlags GetMaxUsableSampleCount()
@@ -626,12 +623,13 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
 
-    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
-    staging.Allocate(BufferType.Staging, bufferSize);
-    staging.WriteDataArray<Vertex>(vertices);
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Staging, bufferSize)
+      .WriteDataArray<Vertex>(vertices);
 
-    vertexBuffer = new GpuBuffer(device, physicalDevice);
-    vertexBuffer.Allocate(BufferType.Vertex, bufferSize);
+    vertexBuffer = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Vertex, bufferSize);
+
     staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
@@ -640,11 +638,11 @@ public unsafe class Application
     ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
     using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
-    staging.Allocate(BufferType.Staging, bufferSize);
-    staging.WriteDataArray<uint>(indices);
+    staging.Allocate(BufferType.Staging, bufferSize)
+      .WriteDataArray<uint>(indices);
 
-    indexBuffer = new GpuBuffer(device, physicalDevice);
-    indexBuffer.Allocate(BufferType.Index, bufferSize);
+    indexBuffer = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Index, bufferSize);
     staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
@@ -656,8 +654,8 @@ public unsafe class Application
 
     for (int i = 0; i < swapChainImages.Length; i++)
     {
-      uniformBuffers[i] = new GpuBuffer(device, physicalDevice);
-      uniformBuffers[i].Allocate(BufferType.Uniform, bufferSize);
+      uniformBuffers[i] = new GpuBuffer(device, physicalDevice)
+        .Allocate(BufferType.Uniform, bufferSize);
     }
   }
 
@@ -697,14 +695,23 @@ public unsafe class Application
     }
   }
 
+  private void CreateDescriptorSetLayout()
+  {
+    descriptorSetLayout = new Rendering.Resources.DescriptorSetLayout(device)
+      .AddBinding(0, DescriptorType.UniformBuffer, 1, ShaderStageFlags.VertexBit)
+      .AddBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit)
+      .Allocate();
+  }
+
   private void CreateDescriptorSets()
   {
     descriptorSets = new Rendering.Resources.DescriptorSet[swapChainImages!.Length];
     for (int i = 0; i < swapChainImages!.Length; i++)
     {
       descriptorSets[i] = new Rendering.Resources.DescriptorSet(device, descriptorPool)
-        .AddUniformBuffer(uniformBuffers![i], 0)
-        .AddTexureSampler(texture, textureSampler, 1)
+        .BindUniformBuffer(uniformBuffers![i], 0)
+        .BindTexureSampler(texture, textureSampler, 1)
+        .SetLayout(descriptorSetLayout)
         .Allocate()
         .Update();
     }
@@ -725,45 +732,6 @@ public unsafe class Application
 
     uniformBuffers![currentImage].WriteData(ubo);
 
-  }
-
-  private void CreateBuffer(ulong size, BufferUsageFlags usage, MemoryPropertyFlags properties, ref Buffer buffer, ref DeviceMemory bufferMemory)
-  {
-    BufferCreateInfo bufferInfo = new()
-    {
-      SType = StructureType.BufferCreateInfo,
-      Size = size,
-      Usage = usage,
-      SharingMode = SharingMode.Exclusive,
-    };
-
-    fixed (Buffer* bufferPtr = &buffer)
-    {
-      if (vk!.CreateBuffer(device, bufferInfo, null, bufferPtr) != Result.Success)
-      {
-        throw new Exception("failed to create vertex buffer!");
-      }
-    }
-
-    MemoryRequirements memRequirements = new();
-    vk!.GetBufferMemoryRequirements(device, buffer, out memRequirements);
-
-    MemoryAllocateInfo allocateInfo = new()
-    {
-      SType = StructureType.MemoryAllocateInfo,
-      AllocationSize = memRequirements.Size,
-      MemoryTypeIndex = FindMemoryType(memRequirements.MemoryTypeBits, properties),
-    };
-
-    fixed (DeviceMemory* bufferMemoryPtr = &bufferMemory)
-    {
-      if (vk!.AllocateMemory(device, allocateInfo, null, bufferMemoryPtr) != Result.Success)
-      {
-        throw new Exception("failed to allocate vertex buffer memory!");
-      }
-    }
-
-    vk!.BindBufferMemory(device, buffer, bufferMemory, 0);
   }
 
   private uint FindMemoryType(uint typeFilter, MemoryPropertyFlags properties)
@@ -890,7 +858,7 @@ public unsafe class Application
     var vertShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-vert.spv");
     var fragShaderCode = System.IO.File.ReadAllBytes($"{assemblyPath}/shaders/Depth-frag.spv");
 
-    graphicsPipeline = new GraphicsPipeline(device, physicalDevice)
+    graphicsPipeline = new GraphicsPipeline(device)
       .SetVerteShader(vertShaderCode)
       .SetFragmentShader(fragShaderCode)
       .SetVertexInputState([.. (new List<VertexInputBindingDescription> { Vertex.GetBindingDescription() })], Vertex.GetAttributeDescriptions())
@@ -899,7 +867,7 @@ public unsafe class Application
       .SetRasterizationState()
       .SetMultisampleState(msaaSamples)
       .SetDepthStencilState()
-      .SetDescriptorSetLayout(descriptorSets![0]!.Layout)
+      .SetDescriptorSetLayout(descriptorSetLayout)
       .SetRenderPass(graphicsPipelineRenderPass)
       .Allocate();
   }

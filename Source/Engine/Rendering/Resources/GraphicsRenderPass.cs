@@ -10,11 +10,12 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
   private AttachmentDescription? depthAttachment;
   private AttachmentDescription? colorAttachmentResolve;
   private RenderPass renderPass;
+  private bool initialized = false;
 
   public RenderPass Pass => renderPass;
 
   public GraphicsRenderPass AddColorAttachment(
-    Format format, 
+    Format format,
     SampleCountFlags samples = SampleCountFlags.Count1Bit,
     AttachmentLoadOp loadOp = AttachmentLoadOp.Clear,
     AttachmentStoreOp storeOp = AttachmentStoreOp.Store,
@@ -22,6 +23,11 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
     ImageLayout initialLayout = ImageLayout.Undefined,
     ImageLayout finalLayout = ImageLayout.ColorAttachmentOptimal)
   {
+    if (initialized)
+    {
+      throw new Exception("Render pass has already been initialized.");
+    }
+
     colorAttachments.Add(new AttachmentDescription
     {
       Format = format,
@@ -45,6 +51,11 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
     ImageLayout finalLayout = ImageLayout.DepthStencilAttachmentOptimal
   )
   {
+    if (initialized)
+    {
+      throw new Exception("Render pass has already been initialized.");
+    }
+
     depthAttachment = new AttachmentDescription
     {
       Format = FindDepthFormat(),
@@ -60,7 +71,7 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
   }
 
   public GraphicsRenderPass AddResolverAttachment(
-    Format format, 
+    Format format,
     SampleCountFlags samples = SampleCountFlags.Count1Bit,
     AttachmentLoadOp loadOp = AttachmentLoadOp.DontCare,
     AttachmentStoreOp storeOp = AttachmentStoreOp.Store,
@@ -69,6 +80,11 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
     ImageLayout initialLayout = ImageLayout.Undefined
   )
   {
+    if (initialized)
+    {
+      throw new Exception("Render pass has already been initialized.");
+    }
+
     colorAttachmentResolve = new AttachmentDescription
     {
       Format = format,
@@ -85,6 +101,11 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
 
   public GraphicsRenderPass Allocate()
   {
+    if (initialized)
+    {
+      throw new Exception("Render pass has already been initialized.");
+    }
+
     if (!colorAttachments.Any() && depthAttachment == null)
     {
       throw new Exception("Render pass must have at least one color attachment or depth attachment.");
@@ -106,7 +127,7 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
         Attachment = attachmentCount++,
         Layout = ImageLayout.DepthStencilAttachmentOptimal,
       };
-    }     
+    }
 
     AttachmentReference colorAttachmentResolveRef = default;
     if (colorAttachmentResolve.HasValue)
@@ -162,6 +183,7 @@ public unsafe class GraphicsRenderPass(Device device, PhysicalDevice physicalDev
         }
       }
     }
+    initialized = true;
     return this;
   }
 

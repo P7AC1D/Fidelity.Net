@@ -3,7 +3,7 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevice) : IDisposable
+public unsafe class GraphicsPipeline(Device device) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
   private ShaderModule? vertexShader, fragmentShader;
@@ -19,24 +19,40 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
   private PipelineLayout pipelineLayout;
   private GraphicsRenderPass renderPass;
   private Pipeline graphicsPipeline;
+  private bool isInitialized = false;
 
   public Pipeline Pipeline => graphicsPipeline;
   public PipelineLayout PipelineLayout => pipelineLayout;
 
   public GraphicsPipeline SetVerteShader(byte[] shaderByteCode)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+
     vertexShader = CreateShaderModule(shaderByteCode);
     return this;
   }
 
   public GraphicsPipeline SetFragmentShader(byte[] shaderByteCode)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+
     fragmentShader = CreateShaderModule(shaderByteCode);
     return this;
   }
 
   public GraphicsPipeline SetInputAssemblyState(PrimitiveTopology primitiveTopology)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     this.primitiveTopology = primitiveTopology;
     return this;
   }
@@ -45,6 +61,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     VertexInputBindingDescription[] vertexInputBindingDescriptions,
     VertexInputAttributeDescription[] vertexInputAttributeDescriptions)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     this.vertexInputBindingDescriptions = vertexInputBindingDescriptions.ToList();
     this.vertexInputAttributeDescriptions = vertexInputAttributeDescriptions.ToList();
     return this;
@@ -52,6 +73,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
 
   public GraphicsPipeline SetViewport(uint width, uint height, uint x = 0, uint y = 0, uint minDepth = 0, int maxDepth = 1)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     viewport = new()
     {
       X = x,
@@ -66,6 +92,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
 
   public GraphicsPipeline SetScissor(uint width, uint height, int x = 0, int y = 0)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     scissor = new()
     {
       Offset = { X = (int)Math.Clamp(x, 0, width), Y = (int)Math.Clamp(y, 0, height) },
@@ -81,6 +112,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     FrontFace frontFace = FrontFace.CounterClockwise,
     bool depthBiasEnable = false)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     rasterizationState = new()
     {
       SType = StructureType.PipelineRasterizationStateCreateInfo,
@@ -97,6 +133,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
 
   public GraphicsPipeline SetMultisampleState(SampleCountFlags sampleCount = SampleCountFlags.Count1Bit)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     multisampleState = new()
     {
       SType = StructureType.PipelineMultisampleStateCreateInfo,
@@ -112,6 +153,11 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
     CompareOp depthCompareOp = CompareOp.Less,
     bool stencilTestEnabled = false)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     depthStencilState = new()
     {
       SType = StructureType.PipelineDepthStencilStateCreateInfo,
@@ -126,18 +172,33 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
 
   public GraphicsPipeline SetDescriptorSetLayout(DescriptorSetLayout descriptorSetLayout)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     this.descriptorSetLayout = descriptorSetLayout;
     return this;
   }
 
   public GraphicsPipeline SetRenderPass(GraphicsRenderPass renderPass)
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     this.renderPass = renderPass;
     return this;
   }
 
   public GraphicsPipeline Allocate()
   {
+    if (isInitialized)
+    {
+      throw new Exception("GraphicsPipeline has already been initialized.");
+    }
+    
     ValidateInput();
 
     IList<PipelineShaderStageCreateInfo> shaderStages =
@@ -177,7 +238,7 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
         PrimitiveRestartEnable = false,
       };
 
-      var layout = descriptorSetLayout!.Value;
+      var layout = descriptorSetLayout!.Layout;
       PipelineLayoutCreateInfo pipelineLayoutInfo = new()
       {
         SType = StructureType.PipelineLayoutCreateInfo,
@@ -251,6 +312,7 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
           throw new Exception("failed to create graphics pipeline!");
         }
       }
+      isInitialized = true;
     }
 
     foreach (var shaderStage in shaderStages)
@@ -314,7 +376,7 @@ public unsafe class GraphicsPipeline(Device device, PhysicalDevice physicalDevic
       throw new Exception("Depth stencil state must be set.");
     }
 
-    if (!descriptorSetLayout.HasValue)
+    if (descriptorSetLayout == null)
     {
       throw new Exception("Descriptor set layout bindings must be set.");
     }

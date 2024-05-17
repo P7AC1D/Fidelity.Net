@@ -16,6 +16,7 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
   private float mipLodBias = 0;
   private float minLod = 0;
   private float maxLod = 1;
+  private bool isInitialized = false;
 
   public Sampler Sampler => sampler;
 
@@ -23,6 +24,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     Filter magFilter = Filter.Linear,
     Filter minFilter = Filter.Linear)
   {
+    if (isInitialized)
+    {
+      throw new Exception("TextureSampler has already been initialized.");
+    }
+
     this.magFilter = magFilter;
     this.minFilter = minFilter;
     return this;
@@ -33,6 +39,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     SamplerAddressMode addressModeV = SamplerAddressMode.Repeat,
     SamplerAddressMode addressModeW = SamplerAddressMode.Repeat)
   {
+    if (isInitialized)
+    {
+      throw new Exception("TextureSampler has already been initialized.");
+    }
+
     this.addressModeU = addressModeU;
     this.addressModeV = addressModeV;
     this.addressModeW = addressModeW;
@@ -42,6 +53,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
   public TextureSampler SetAnisotropy(
     bool enableAnisotropy = false)
   {
+    if (isInitialized)
+    {
+      throw new Exception("TextureSampler has already been initialized.");
+    }
+
     this.enableAnisotropy = enableAnisotropy;
     return this;
   }
@@ -52,6 +68,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     float minLod = 0.0f,
     float maxLod = 0.0f)
   {
+    if (isInitialized)
+    {
+      throw new Exception("TextureSampler has already been initialized.");
+    }
+
     this.mipmapMode = mipmapMode;
     this.mipLodBias = mipLodBias;
     this.minLod = minLod;
@@ -61,6 +82,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
 
   public TextureSampler Allocate()
   {
+    if (isInitialized)
+    {
+      throw new Exception("TextureSampler has already been initialized.");
+    }
+
     vk!.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties properties);
 
     SamplerCreateInfo samplerInfo = new()
@@ -90,6 +116,7 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
         throw new Exception("Failed to create texture sampler.");
       }
     }
+    isInitialized = true;
     return this;
   }
 

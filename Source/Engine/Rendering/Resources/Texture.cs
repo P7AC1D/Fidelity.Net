@@ -9,11 +9,12 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
   private DeviceMemory memory;
   private Image image;
   private ImageView imageView;
+  private bool initialized = false;
 
   public Image Image => image;
   public ImageView ImageView => imageView;
 
-  public void Allocate(
+  public Texture Allocate(
     Extent3D extent,
     uint mipLevels,
     SampleCountFlags numSamples,
@@ -23,6 +24,11 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     MemoryPropertyFlags properties,
     ImageAspectFlags imageAspectFlags)
   {
+    if (initialized)
+    {
+      throw new Exception("Texture has already been allocated.");
+    }
+
     ImageCreateInfo imageInfo = new()
     {
       SType = StructureType.ImageCreateInfo,
@@ -85,15 +91,22 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     {
       throw new Exception("Failed to create image view.");
     }
+    initialized = true;
+    return this;
   }
 
-  public void TransitionImageLayout(
+  public Texture TransitionImageLayout(
     ImageLayout oldLayout,
     ImageLayout newLayout,
     uint mipLevels,
     CommandPool commandPool,
     Queue queue)
   {
+    if (!initialized)
+    {
+      throw new Exception("Texture has not been allocated.");
+    }
+
     CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
 
     ImageMemoryBarrier barrier = new()
@@ -141,10 +154,16 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     vk!.CmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, null, 0, null, 1, barrier);
 
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
+    return this;
   }
 
-  public void CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, Queue queue)
+  public Texture CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, Queue queue)
   {
+    if (!initialized)
+    {
+      throw new Exception("Texture has not been allocated.");
+    }
+
     CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
 
     BufferImageCopy region = new()
@@ -167,10 +186,16 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     vk!.CmdCopyBufferToImage(commandBuffer, buffer.Buffer, image, ImageLayout.TransferDstOptimal, 1, region);
 
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
+    return this;
   }
 
-  public void GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, Queue queue)
+  public Texture GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, Queue queue)
   {
+    if (!initialized)
+    {
+      throw new Exception("Texture has not been allocated.");
+    }
+
     vk!.GetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, out var formatProperties);
 
     if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.SampledImageFilterLinearBit) == 0)
@@ -272,6 +297,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
         1, barrier);
 
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
+    return this;
   }
 
   public void Dispose()

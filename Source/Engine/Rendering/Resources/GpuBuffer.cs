@@ -16,7 +16,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
   public ulong SizeBytes { get; private set; } = 0;
   public Buffer Buffer { get { return buffer; } }
 
-  public void Allocate(BufferType gpuBufferType, ulong sizeBytes)
+  public GpuBuffer Allocate(BufferType gpuBufferType, ulong sizeBytes)
   {
     if (Allocated)
     {
@@ -61,9 +61,10 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
 
     Allocated = true;
     SizeBytes = sizeBytes;
+    return this;
   }
 
-  public void WriteData<T>(T data) where T : struct
+  public GpuBuffer WriteData<T>(T data) where T : struct
   {
     if (!Allocated)
     {
@@ -79,9 +80,10 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     void* mappedMemory = MapRange(0, bufferSize);
     new Span<T>(mappedMemory, 1)[0] = data;
     Unmap();
+    return this;
   }
 
-  public void WriteDataArray<T>(T[] data) where T : struct
+  public GpuBuffer WriteDataArray<T>(T[] data) where T : struct
   {
     if (!Allocated)
     {
@@ -90,7 +92,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
 
     if (data == null || data!.Length == 0)
     {
-      return;
+      throw new Exception("Data array is null or empty.");
     }
 
     ulong bufferSize = (ulong)(Unsafe.SizeOf<T>() * data!.Length);
@@ -103,35 +105,10 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
 
     data.AsSpan().CopyTo(new Span<T>(mappedMemory, data.Length));
     Unmap();
+    return this;
   }
 
-  public void CopyBufferToImage(Buffer buffer, Image image, uint width, uint height, CommandPool commandPool, Queue graphicsQueue)
-  {
-    CommandBuffer commandBuffer = Utility.BeginSingleTimeCommands(commandPool, device);
-
-    BufferImageCopy region = new()
-    {
-      BufferOffset = 0,
-      BufferRowLength = 0,
-      BufferImageHeight = 0,
-      ImageSubresource =
-            {
-                AspectMask = ImageAspectFlags.ColorBit,
-                MipLevel = 0,
-                BaseArrayLayer = 0,
-                LayerCount = 1,
-            },
-      ImageOffset = new Offset3D(0, 0, 0),
-      ImageExtent = new Extent3D(width, height, 1),
-
-    };
-
-    vk!.CmdCopyBufferToImage(commandBuffer, buffer, image, ImageLayout.TransferDstOptimal, 1, region);
-
-    Utility.EndSingleTimeCommands(graphicsQueue, commandBuffer, device, commandPool);
-  }
-
-  public void CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
+  public GpuBuffer CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
   {
     CommandBufferAllocateInfo allocateInfo = new()
     {
@@ -171,6 +148,7 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     vk!.QueueWaitIdle(graphicsQueue);
 
     vk!.FreeCommandBuffers(device, commandPool, 1, commandBuffer);
+    return this;
   }
 
   public void* MapRange(ulong offsetbytes, ulong sizeBytes)

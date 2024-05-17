@@ -2,19 +2,19 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) : IDisposable
+public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool)
 {
   private readonly Vk vk = Vk.GetApi();
-  private IList<(GpuBuffer Buffer, uint Binding)> uniformBuffers = [];
-  private IList<(Texture Texture, TextureSampler TextureSampler, uint Binding)> textureSamplers = [];
+  private readonly IList<(GpuBuffer Buffer, uint Binding)> uniformBuffers = [];
+  private readonly IList<(Texture Texture, TextureSampler TextureSampler, uint Binding)> textureSamplers = [];
   private Silk.NET.Vulkan.DescriptorSet descriptorSet;
   private DescriptorSetLayout descriptorSetLayout;
   private bool isInitialized = false;
+  private bool layoutAssigned = false;
 
   public Silk.NET.Vulkan.DescriptorSet Set => descriptorSet;
-  public DescriptorSetLayout Layout => descriptorSetLayout;
 
-  public DescriptorSet AddUniformBuffer(GpuBuffer gpuBuffer, uint binding)
+  public DescriptorSet BindUniformBuffer(GpuBuffer gpuBuffer, uint binding)
   {
     if (isInitialized)
     {
@@ -25,7 +25,7 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) 
     return this;
   }
 
-  public DescriptorSet AddTexureSampler(Texture texture, TextureSampler textureSampler, uint binding)
+  public DescriptorSet BindTexureSampler(Texture texture, TextureSampler textureSampler, uint binding)
   {
     if (isInitialized)
     {
@@ -36,6 +36,18 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) 
     return this;
   }
 
+  public DescriptorSet SetLayout(DescriptorSetLayout layout)
+  {
+    if (isInitialized)
+    {
+      throw new Exception("DescriptorSet has already been allocated.");
+    }
+
+    descriptorSetLayout = layout;
+    layoutAssigned = true;
+    return this;
+  }
+
   public DescriptorSet Allocate()
   {
     if (isInitialized)
@@ -43,61 +55,25 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) 
       throw new Exception("DescriptorSet has already been allocated.");
     }
 
-    DescriptorSetLayoutBinding[] descriptorSetLayoutBindings = new DescriptorSetLayoutBinding[uniformBuffers.Count + textureSamplers.Count];
-    for (int i = 0; i < uniformBuffers.Count; i++)
+    if (!layoutAssigned)
     {
-      descriptorSetLayoutBindings[i] = new DescriptorSetLayoutBinding
-      {
-        Binding = uniformBuffers[i].Binding,
-        DescriptorType = DescriptorType.UniformBuffer,
-        DescriptorCount = 1,
-        StageFlags = ShaderStageFlags.AllGraphics,
-      };
+      throw new Exception("DescriptorSetLayout must be assigned before allocating DescriptorSet.");
     }
 
-    for (int i = 0; i < textureSamplers.Count; i++)
+    var layout = descriptorSetLayout!.Layout;
+    DescriptorSetAllocateInfo allocateInfo = new()
     {
-      descriptorSetLayoutBindings[i + uniformBuffers.Count] = new DescriptorSetLayoutBinding
-      {
-        Binding = textureSamplers[i].Binding,
-        DescriptorType = DescriptorType.CombinedImageSampler,
-        DescriptorCount = 1,
-        StageFlags = ShaderStageFlags.AllGraphics,
-      };
-    }
+      SType = StructureType.DescriptorSetAllocateInfo,
+      DescriptorPool = descriptorPool,
+      DescriptorSetCount = 1,
+      PSetLayouts = &layout,
+    };
 
-    fixed (DescriptorSetLayoutBinding* bindingsPtr = descriptorSetLayoutBindings.ToArray())
-    fixed (DescriptorSetLayout* descriptorSetLayoutPtr = &descriptorSetLayout)
+    fixed (Silk.NET.Vulkan.DescriptorSet* descriptorSetsPtr = &descriptorSet)
     {
-      DescriptorSetLayoutCreateInfo layoutInfo = new()
+      if (vk!.AllocateDescriptorSets(device, allocateInfo, descriptorSetsPtr) != Result.Success)
       {
-        SType = StructureType.DescriptorSetLayoutCreateInfo,
-        BindingCount = (uint)descriptorSetLayoutBindings.Length,
-        PBindings = bindingsPtr,
-      };
-
-      if (vk!.CreateDescriptorSetLayout(device, layoutInfo, null, descriptorSetLayoutPtr) != Result.Success)
-      {
-        throw new Exception("Failed to create DescriptorSetLayout.");
-      }
-    }
-
-    fixed (DescriptorSetLayout* layoutsPtr = &descriptorSetLayout)
-    {
-      DescriptorSetAllocateInfo allocateInfo = new()
-      {
-        SType = StructureType.DescriptorSetAllocateInfo,
-        DescriptorPool = descriptorPool,
-        DescriptorSetCount = 1,
-        PSetLayouts = layoutsPtr,
-      };
-
-      fixed (Silk.NET.Vulkan.DescriptorSet* descriptorSetsPtr = &descriptorSet)
-      {
-        if (vk!.AllocateDescriptorSets(device, allocateInfo, descriptorSetsPtr) != Result.Success)
-        {
-          throw new Exception("Failed to allocate DescriptorSet.");
-        }
+        throw new Exception("Failed to allocate DescriptorSet.");
       }
     }
 
@@ -162,19 +138,5 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool) 
     }
 
     return this;
-  }
-
-  public void Dispose()
-  {
-    Dispose(true);
-    GC.SuppressFinalize(this);
-  }
-
-  protected virtual void Dispose(bool disposing)
-  {
-    if (disposing)
-    {
-      vk!.DestroyDescriptorSetLayout(device, descriptorSetLayout, null);
-    }
   }
 }
