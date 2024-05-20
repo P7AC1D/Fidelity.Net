@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -79,5 +80,81 @@ public unsafe static class PhysicalDeviceExtensions
     }
 
     return indices;
+  }
+
+  public static bool IsDeviceSuitable(this PhysicalDevice device, KhrSurface? khrSurface, SurfaceKHR surface, string[] deviceExtensions)
+  {
+    Vk vk = Vk.GetApi();
+    var indices = FindQueueFamilies(device, khrSurface, surface);
+
+    bool extensionsSupported = CheckDeviceExtensionsSupport(device, deviceExtensions);
+
+    bool swapChainAdequate = false;
+    if (extensionsSupported)
+    {
+      var swapChainSupport = QuerySwapChainSupport(device, khrSurface, surface);
+      swapChainAdequate = swapChainSupport.Formats.Any() && swapChainSupport.PresentModes.Any();
+    }
+
+    vk!.GetPhysicalDeviceFeatures(device, out PhysicalDeviceFeatures supportedFeatures);
+
+    return indices.IsComplete() && extensionsSupported && swapChainAdequate && supportedFeatures.SamplerAnisotropy;
+  }
+
+  public static bool CheckDeviceExtensionsSupport(this PhysicalDevice device, string[] deviceExtensions)
+  {
+    Vk vk = Vk.GetApi();
+    uint extentionsCount = 0;
+    vk!.EnumerateDeviceExtensionProperties(device, (byte*)null, ref extentionsCount, null);
+
+    var availableExtensions = new ExtensionProperties[extentionsCount];
+    fixed (ExtensionProperties* availableExtensionsPtr = availableExtensions)
+    {
+      vk!.EnumerateDeviceExtensionProperties(device, (byte*)null, ref extentionsCount, availableExtensionsPtr);
+    }
+
+    var availableExtensionNames = availableExtensions.Select(extension => Marshal.PtrToStringAnsi((IntPtr)extension.ExtensionName)).ToHashSet();
+    return deviceExtensions.All(availableExtensionNames.Contains);
+  }
+
+  public static SwapChainSupportDetails QuerySwapChainSupport(this PhysicalDevice physicalDevice, KhrSurface? khrSurface, SurfaceKHR surface)
+  {
+    var details = new SwapChainSupportDetails();
+
+    khrSurface!.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out details.Capabilities);
+
+    uint formatCount = 0;
+    khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, ref formatCount, null);
+
+    if (formatCount != 0)
+    {
+      details.Formats = new SurfaceFormatKHR[formatCount];
+      fixed (SurfaceFormatKHR* formatsPtr = details.Formats)
+      {
+        khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, ref formatCount, formatsPtr);
+      }
+    }
+    else
+    {
+      details.Formats = [];
+    }
+
+    uint presentModeCount = 0;
+    khrSurface.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, ref presentModeCount, null);
+
+    if (presentModeCount != 0)
+    {
+      details.PresentModes = new PresentModeKHR[presentModeCount];
+      fixed (PresentModeKHR* formatsPtr = details.PresentModes)
+      {
+        khrSurface.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, ref presentModeCount, formatsPtr);
+      }
+    }
+    else
+    {
+      details.PresentModes = [];
+    }
+
+    return details;
   }
 }
