@@ -7,29 +7,26 @@ using Silk.NET.Windowing;
 namespace Fidelity.Rendering.Resources;
 
 public unsafe class Swapchain(
-  Instance instance, 
-  Device device, 
-  PhysicalDevice physicalDevice, 
-  IWindow window, 
-  Queue presentQueue, 
-  SurfaceKHR surface, 
+  Instance instance,
+  Device device,
+  PhysicalDevice physicalDevice,
+  IWindow window,
+  Queue presentQueue,
+  SurfaceKHR surface,
   KhrSurface khrSurface)
 {
   private Vk vk = Vk.GetApi();
   private KhrSwapchain khrSwapChain;
   private SwapchainKHR swapChain;
-  private Image[] swapChainImages = [];
-  private Format swapChainImageFormat;
-  private Extent2D swapChainExtent;
   private bool isInitialized = false;
 
-  public uint Length => (uint)swapChainImages!.Length;
+  public uint Length => (uint)Images!.Length;
   public SwapchainKHR Get => swapChain;
-  public Extent2D Extent => swapChainExtent;
-  public Format Format => swapChainImageFormat;
-  public uint Width => swapChainExtent.Width;
-  public uint Height => swapChainExtent.Height;
-  public Image[] Images => swapChainImages;
+  public Extent2D Extent { get; private set; }
+  public Format Format { get; private set; }
+  public uint Width => Extent.Width;
+  public uint Height => Extent.Height;
+  public Image[] Images { get; private set; } = [];
 
   public Swapchain Create()
   {
@@ -100,14 +97,14 @@ public unsafe class Swapchain(
     }
 
     khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, null);
-    swapChainImages = new Image[imageCount];
-    fixed (Image* swapChainImagesPtr = swapChainImages)
+    Images = new Image[imageCount];
+    fixed (Image* swapChainImagesPtr = Images)
     {
       khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, swapChainImagesPtr);
     }
 
-    swapChainImageFormat = surfaceFormat.Format;
-    swapChainExtent = extent;
+    Format = surfaceFormat.Format;
+    Extent = extent;
     isInitialized = true;
     return this;
   }
