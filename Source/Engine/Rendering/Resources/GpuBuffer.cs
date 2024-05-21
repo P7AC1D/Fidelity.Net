@@ -108,24 +108,14 @@ public unsafe class GpuBuffer(Device device, PhysicalDevice physicalDevice) : ID
     return this;
   }
 
-  public GpuBuffer CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, Queue graphicsQueue)
+  public GpuBuffer CopyData(GpuBuffer destination, ulong sizeBytes, CommandPool commandPool, GraphicsQueue graphicsQueue)
   {
     CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer()
       .Begin()
       .CopyBuffer(this, destination, sizeBytes)
       .End();
-
-    var cmdBuf = commandBuffer.Buffer;
-    SubmitInfo submitInfo = new()
-    {
-      SType = StructureType.SubmitInfo,
-      CommandBufferCount = 1,
-      PCommandBuffers = &cmdBuf,
-    };
-
-    vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
-    vk!.QueueWaitIdle(graphicsQueue);
-
+      
+    graphicsQueue.SubmitAndWait(commandBuffer);
     commandPool.FreeCommandBuffer(commandBuffer);
     return this;
   }

@@ -17,6 +17,25 @@ public unsafe class GraphicsQueue(Device device)
     return this;
   }
 
+  public void SubmitAndWait(CommandBuffer commandBuffer)
+  {
+    if (!isInitialized)
+    {
+      throw new Exception("GraphicsQueue has not been allocated.");
+    }
+
+    var cmdBuf = commandBuffer.Buffer;
+    SubmitInfo submitInfo = new()
+    {
+      SType = StructureType.SubmitInfo,
+      CommandBufferCount = 1,
+      PCommandBuffers = &cmdBuf,
+    };
+
+    vk!.QueueSubmit(queue, 1, submitInfo, default);
+    vk!.QueueWaitIdle(queue);
+  }
+
   public void Submit(CommandBuffer commandBuffer, Semaphore waitSemaphore, Semaphore signalSemaphore, Fence fence, PipelineStageFlags pipelineStageFlags)
   {
     if (!isInitialized)
@@ -43,5 +62,15 @@ public unsafe class GraphicsQueue(Device device)
     {
       throw new Exception("Failed to submit command buffer to queue.");
     }
+  }
+
+  public void Wait()
+  {
+    if (!isInitialized)
+    {
+      throw new Exception("GraphicsQueue has not been allocated.");
+    }
+
+    vk!.QueueWaitIdle(queue);
   }
 }

@@ -182,6 +182,62 @@ public unsafe class CommandBuffer(Silk.NET.Vulkan.CommandBuffer commandBuffer)
     return this;
   }
 
+  public CommandBuffer PipelineBarrier(PipelineStageFlags srcStage, PipelineStageFlags dstStage, ImageMemoryBarrier memoryBarrier)
+  {
+    if (!commandBufferRecording)
+    {
+      throw new Exception("CommandBuffer is not recording.");
+    }
+
+    vk!.CmdPipelineBarrier(commandBuffer, srcStage, dstStage, 0, 0, null, 0, null, 1, memoryBarrier);
+    return this;
+  }
+
+  public CommandBuffer CopyBufferToImage(GpuBuffer srcBuffer, uint width, uint height, Texture texture)
+  {
+    if (!commandBufferRecording)
+    {
+      throw new Exception("CommandBuffer is not recording.");
+    }
+
+    BufferImageCopy region = new()
+    {
+      BufferOffset = 0,
+      BufferRowLength = 0,
+      BufferImageHeight = 0,
+      ImageSubresource =
+      {
+          AspectMask = ImageAspectFlags.ColorBit,
+          MipLevel = 0,
+          BaseArrayLayer = 0,
+          LayerCount = 1,
+      },
+      ImageOffset = new Offset3D(0, 0, 0),
+      ImageExtent = new Extent3D(width, height, 1),
+
+    };
+
+    vk!.CmdCopyBufferToImage(commandBuffer, srcBuffer.Buffer, texture.Image, ImageLayout.TransferDstOptimal, 1, region);
+    return this;
+  }
+
+  public CommandBuffer BlitImage(Texture src, Texture dst, ImageBlit imageBlit)
+  {
+    if (!commandBufferRecording)
+    {
+      throw new Exception("CommandBuffer is not recording.");
+    }
+
+    vk!.CmdBlitImage(
+      commandBuffer,
+      src.Image, ImageLayout.TransferSrcOptimal,
+      dst.Image, ImageLayout.TransferDstOptimal,
+      1, imageBlit,
+      Filter.Linear);
+
+    return this;
+  }
+
   public CommandBuffer CopyBuffer(GpuBuffer srcBuffer, GpuBuffer dstBuffer, ulong size)
   {
     if (!commandBufferRecording)

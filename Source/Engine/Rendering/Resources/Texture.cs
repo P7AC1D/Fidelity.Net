@@ -83,14 +83,14 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     ImageLayout newLayout,
     uint mipLevels,
     CommandPool commandPool,
-    Queue queue)
+    GraphicsQueue queue)
   {
     if (!initialized)
     {
       throw new Exception("Texture has not been allocated.");
     }
 
-    Silk.NET.Vulkan.CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
+    CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
 
     ImageMemoryBarrier barrier = new()
     {
@@ -134,45 +134,25 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
       throw new Exception("Unsupported image layout transition.");
     }
 
-    vk!.CmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, null, 0, null, 1, barrier);
-
+    commandBuffer.PipelineBarrier(sourceStage, destinationStage, barrier);
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
     return this;
   }
 
-  public Texture CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, Queue queue)
+  public Texture CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, GraphicsQueue queue)
   {
     if (!initialized)
     {
       throw new Exception("Texture has not been allocated.");
     }
 
-    Silk.NET.Vulkan.CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
-
-    BufferImageCopy region = new()
-    {
-      BufferOffset = 0,
-      BufferRowLength = 0,
-      BufferImageHeight = 0,
-      ImageSubresource =
-      {
-          AspectMask = ImageAspectFlags.ColorBit,
-          MipLevel = 0,
-          BaseArrayLayer = 0,
-          LayerCount = 1,
-      },
-      ImageOffset = new Offset3D(0, 0, 0),
-      ImageExtent = new Extent3D(width, height, 1),
-
-    };
-
-    vk!.CmdCopyBufferToImage(commandBuffer, buffer.Buffer, image, ImageLayout.TransferDstOptimal, 1, region);
-
+    CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool)
+      .CopyBufferToImage(buffer, width, height, this);
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
     return this;
   }
 
-  public Texture GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, Queue queue)
+  public Texture GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, GraphicsQueue queue)
   {
     if (!initialized)
     {
@@ -214,10 +194,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
       barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
       barrier.DstAccessMask = AccessFlags.TransferReadBit;
 
-      vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, 0,
-          0, null,
-          0, null,
-          1, barrier);
+      commandBuffer.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.TransferBit, barrier);
 
       ImageBlit blit = new()
       {
@@ -248,21 +225,14 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
 
       };
 
-      vk!.CmdBlitImage(commandBuffer,
-          image, ImageLayout.TransferSrcOptimal,
-          image, ImageLayout.TransferDstOptimal,
-          1, blit,
-          Filter.Linear);
+      commandBuffer.BlitImage(this, this, blit);
 
       barrier.OldLayout = ImageLayout.TransferSrcOptimal;
       barrier.NewLayout = ImageLayout.ShaderReadOnlyOptimal;
       barrier.SrcAccessMask = AccessFlags.TransferReadBit;
       barrier.DstAccessMask = AccessFlags.ShaderReadBit;
 
-      vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, 0,
-          0, null,
-          0, null,
-          1, barrier);
+      commandBuffer.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, barrier);
 
       if (mipWidth > 1) mipWidth /= 2;
       if (mipHeight > 1) mipHeight /= 2;
@@ -274,10 +244,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     barrier.SrcAccessMask = AccessFlags.TransferWriteBit;
     barrier.DstAccessMask = AccessFlags.ShaderReadBit;
 
-    vk!.CmdPipelineBarrier(commandBuffer, PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, 0,
-        0, null,
-        0, null,
-        1, barrier);
+    commandBuffer.PipelineBarrier(PipelineStageFlags.TransferBit, PipelineStageFlags.FragmentShaderBit, barrier);
 
     EndSingleTimeCommands(commandPool, commandBuffer, queue);
     return this;
@@ -298,43 +265,16 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     }
   }
 
-  private Silk.NET.Vulkan.CommandBuffer BeginSingleTimeCommands(CommandPool commandPool)
+  private CommandBuffer BeginSingleTimeCommands(CommandPool commandPool)
   {
-    CommandBufferAllocateInfo allocateInfo = new()
-    {
-      SType = StructureType.CommandBufferAllocateInfo,
-      Level = CommandBufferLevel.Primary,
-      CommandPool = commandPool.Pool,
-      CommandBufferCount = 1,
-    };
-
-    vk!.AllocateCommandBuffers(device, allocateInfo, out Silk.NET.Vulkan.CommandBuffer commandBuffer);
-
-    CommandBufferBeginInfo beginInfo = new()
-    {
-      SType = StructureType.CommandBufferBeginInfo,
-      Flags = CommandBufferUsageFlags.OneTimeSubmitBit,
-    };
-
-    vk!.BeginCommandBuffer(commandBuffer, beginInfo);
-
+    CommandBuffer commandBuffer = commandPool.AllocateCommandBuffer().Begin();
     return commandBuffer;
   }
 
-  private void EndSingleTimeCommands(CommandPool commandPool, Silk.NET.Vulkan.CommandBuffer commandBuffer, Queue graphicsQueue)
+  private void EndSingleTimeCommands(CommandPool commandPool, CommandBuffer commandBuffer, GraphicsQueue graphicsQueue)
   {
-    vk!.EndCommandBuffer(commandBuffer);
-
-    SubmitInfo submitInfo = new()
-    {
-      SType = StructureType.SubmitInfo,
-      CommandBufferCount = 1,
-      PCommandBuffers = &commandBuffer,
-    };
-
-    vk!.QueueSubmit(graphicsQueue, 1, submitInfo, default);
-    vk!.QueueWaitIdle(graphicsQueue);
-
-    vk!.FreeCommandBuffers(device, commandPool.Pool, 1, commandBuffer);
+    commandBuffer.End();
+    graphicsQueue.SubmitAndWait(commandBuffer);
+    commandPool.FreeCommandBuffer(commandBuffer);
   }
 }

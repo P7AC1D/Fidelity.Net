@@ -519,9 +519,9 @@ public unsafe class Application
         ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
         MemoryPropertyFlags.DeviceLocalBit,
         ImageAspectFlags.ColorBit)
-      .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue.Queue)
-      .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue.Queue)
-      .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue.Queue);
+      .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue)
+      .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue)
+      .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
   }
 
   private SampleCountFlags GetMaxUsableSampleCount()
@@ -560,7 +560,7 @@ public unsafe class Application
     vertexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Vertex, bufferSize);
 
-    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue.Queue);
+    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private void CreateIndexBuffer()
@@ -573,7 +573,7 @@ public unsafe class Application
 
     indexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Index, bufferSize);
-    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue.Queue);
+    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private void CreateUniformBuffers()
