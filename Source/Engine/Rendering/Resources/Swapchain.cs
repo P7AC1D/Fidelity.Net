@@ -26,6 +26,7 @@ public unsafe class Swapchain(
   public uint Width => Extent.Width;
   public uint Height => Extent.Height;
   public Silk.NET.Vulkan.Image[] Images { get; private set; } = [];
+  public ImageView[] ImageViews {get; private set; } = [];
 
   public Swapchain Create()
   {
@@ -104,6 +105,16 @@ public unsafe class Swapchain(
 
     Format = surfaceFormat.Format;
     Extent = extent;
+
+    ImageViews = new ImageView[Length];
+
+    for (int i = 0; i < Length; i++)
+    {
+      ImageViews[i] = new ImageView(device)
+        .SetImage(Images![i], Format)
+        .SetRange(ImageAspectFlags.ColorBit)
+        .Allocate();
+    }
     isInitialized = true;
     return this;
   }
@@ -168,6 +179,11 @@ public unsafe class Swapchain(
     }
 
     khrSwapChain!.DestroySwapchain(device, swapChain, null);
+
+    foreach (var imageView in ImageViews!)
+    {
+      imageView.Dispose();
+    }
   }
 
   private SurfaceFormatKHR ChooseSwapSurfaceFormat(IReadOnlyList<SurfaceFormatKHR> availableFormats)

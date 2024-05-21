@@ -100,7 +100,6 @@ public unsafe class Application
   private bool EnableValidationLayers = true;
   private uint mipLevels;
   
-  private ImageView[] swapChainImageViews;
   private Framebuffer[] swapChainFramebuffers;
 
   private GraphicsPipeline graphicsPipeline;
@@ -195,7 +194,6 @@ public unsafe class Application
     CleanUpSwapChain();
 
     CreateSwapChain();
-    CreateImageViews();
     CreateRenderPass();
     CreateColorResources();
     CreateDepthResources();
@@ -270,11 +268,6 @@ public unsafe class Application
     graphicsPipeline.Dispose();
     graphicsPipelineRenderPass.Dispose();
 
-    foreach (var imageView in swapChainImageViews!)
-    {
-      imageView.Dispose();
-    }
-
     swapChain!.DestroySwapchain();
 
     for (int i = 0; i < swapChain!.Length; i++)
@@ -332,7 +325,6 @@ public unsafe class Application
     PickPhysicalDevice();
     CreateLogicalDevice();
     CreateSwapChain();
-    CreateImageViews();
     CreateRenderPass();
     CreateCommandPool();
     CreateColorResources();
@@ -643,19 +635,6 @@ public unsafe class Application
     }
   }
 
-  private void CreateImageViews()
-  {
-    swapChainImageViews = new ImageView[swapChain!.Length];
-
-    for (int i = 0; i < swapChain.Length; i++)
-    {
-      swapChainImageViews[i] = new ImageView(device)
-        .SetImage(swapChain!.Images![i], swapChain.Format)
-        .SetRange(ImageAspectFlags.ColorBit)
-        .Allocate();
-    }
-  }
-
   private void CreateGraphicsPipeline()
   {
     var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -873,13 +852,13 @@ public unsafe class Application
 
   private void CreateFramebuffers()
   {
-    swapChainFramebuffers = new Framebuffer[swapChainImageViews!.Length];
-    for (int i = 0; i < swapChainImageViews.Length; i++)
+    swapChainFramebuffers = new Framebuffer[swapChain!.Length];
+    for (int i = 0; i < swapChain.Length; i++)
     {
       swapChainFramebuffers[i] = new Framebuffer(device)
         .AddAttachment(colorImage.ImageView)
         .AddAttachment(depthImage.ImageView)
-        .AddAttachment(swapChainImageViews[i])
+        .AddAttachment(swapChain.ImageViews![i])
         .SetRenderPass(graphicsPipelineRenderPass)
         .SetBoundary(swapChain.Width, swapChain.Height)
         .Allocate();
