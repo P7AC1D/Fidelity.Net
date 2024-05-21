@@ -1,5 +1,6 @@
 using Fidelity.Rendering.Enums;
 using Fidelity.Rendering.Extensions;
+using Fidelity.Rendering.Models;
 using Fidelity.Rendering.Resources;
 using Silk.NET.Assimp;
 using Silk.NET.Core;
@@ -13,26 +14,13 @@ using Silk.NET.Windowing;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using Buffer = Silk.NET.Vulkan.Buffer;
 using CommandBuffer = Fidelity.Rendering.Resources.CommandBuffer;
 using CommandPool = Fidelity.Rendering.Resources.CommandPool;
 using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
 using ImageView = Fidelity.Rendering.Resources.ImageView;
-using Semaphore = Silk.NET.Vulkan.Semaphore;
 using Texture = Fidelity.Rendering.Resources.Texture;
 
 namespace Fidelity;
-
-public struct QueueFamilyIndices
-{
-  public uint? GraphicsFamily { get; set; }
-  public uint? PresentFamily { get; set; }
-
-  public bool IsComplete()
-  {
-    return GraphicsFamily.HasValue && PresentFamily.HasValue;
-  }
-}
 
 struct Vertex
 {
@@ -91,13 +79,6 @@ struct UniformBufferObject
   public Matrix4X4<float> proj;
 }
 
-public struct SwapChainSupportDetails
-{
-  public SurfaceCapabilitiesKHR Capabilities;
-  public SurfaceFormatKHR[] Formats;
-  public PresentModeKHR[] PresentModes;
-}
-
 public unsafe class Application
 {
   private readonly IWindow window;
@@ -106,8 +87,9 @@ public unsafe class Application
 
   private ExtDebugUtils? debugUtils;
   private DebugUtilsMessengerEXT debugMessenger;
-  private KhrSurface? khrSurface;
+  private Swapchain swapChain;
   private SurfaceKHR surface;
+  private KhrSurface khrSurface;
 
   private PhysicalDevice physicalDevice;
   private SampleCountFlags msaaSamples = SampleCountFlags.Count1Bit;
@@ -118,11 +100,7 @@ public unsafe class Application
 
   private bool EnableValidationLayers = true;
   private uint mipLevels;
-  private KhrSwapchain? khrSwapChain;
-  private SwapchainKHR swapChain;
-  private Image[]? swapChainImages;
-  private Format swapChainImageFormat;
-  private Extent2D swapChainExtent;
+  
   private ImageView[] swapChainImageViews;
   private Framebuffer[] swapChainFramebuffers;
 
@@ -229,24 +207,17 @@ public unsafe class Application
     CreateGraphicsPipeline();
     CreateCommandBuffers();
 
-    imagesInFlight = new Rendering.Resources.Fence[swapChainImages!.Length];
+    imagesInFlight = new Rendering.Resources.Fence[swapChain!.Length];
   }
 
   public void Render(double dt)
   {
     inFlightFences![currentFrame].Wait();
 
-    uint imageIndex = 0;
-    var result = khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame]!.Get, default, ref imageIndex);
-
-    if (result == Result.ErrorOutOfDateKhr)
+    if (!swapChain.GetNextImageIndex(imageAvailableSemaphores![currentFrame], out uint imageIndex))
     {
       RecreateSwapChain();
       return;
-    }
-    else if (result != Result.Success && result != Result.SuboptimalKhr)
-    {
-      throw new Exception("failed to acquire swap chain image!");
     }
 
     UpdateUniformBuffer(imageIndex);
@@ -264,32 +235,11 @@ public unsafe class Application
       renderFinishedSemaphores![currentFrame],
       inFlightFences![currentFrame],
       PipelineStageFlags.ColorAttachmentOutputBit);
-    
-    var signalSemaphores = stackalloc[] { renderFinishedSemaphores![currentFrame]!.Get };
-    var swapChains = stackalloc[] { swapChain };
-    PresentInfoKHR presentInfo = new()
-    {
-      SType = StructureType.PresentInfoKhr,
 
-      WaitSemaphoreCount = 1,
-      PWaitSemaphores = signalSemaphores,
-
-      SwapchainCount = 1,
-      PSwapchains = swapChains,
-
-      PImageIndices = &imageIndex
-    };
-
-    result = khrSwapChain.QueuePresent(presentQueue, presentInfo);
-
-    if (result == Result.ErrorOutOfDateKhr || result == Result.SuboptimalKhr || frameBufferResized)
+    if (!swapChain.Present(renderFinishedSemaphores![currentFrame], imageIndex) || frameBufferResized)
     {
       frameBufferResized = false;
       RecreateSwapChain();
-    }
-    else if (result != Result.Success)
-    {
-      throw new Exception("failed to present swap chain image!");
     }
 
     currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
@@ -326,9 +276,9 @@ public unsafe class Application
       imageView.Dispose();
     }
 
-    khrSwapChain!.DestroySwapchain(device, swapChain, null);
+    swapChain!.DestroySwapchain();
 
-    for (int i = 0; i < swapChainImages!.Length; i++)
+    for (int i = 0; i < swapChain!.Length; i++)
     {
       uniformBuffers[i]?.Dispose();
     }
@@ -408,7 +358,7 @@ public unsafe class Application
     imageAvailableSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
     renderFinishedSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
     inFlightFences = new Fidelity.Rendering.Resources.Fence[MAX_FRAMES_IN_FLIGHT];
-    imagesInFlight = new Fidelity.Rendering.Resources.Fence[swapChainImages!.Length];
+    imagesInFlight = new Fidelity.Rendering.Resources.Fence[swapChain!.Length];
 
     for (var i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
@@ -424,7 +374,7 @@ public unsafe class Application
   private void CreateCommandPool()
   {
     commandPool = new CommandPool(device)
-      .Create(physicalDevice.FindQueueFamilies(khrSurface, surface));
+      .Create(swapChain.FindGraphicsQueueFamilyIndex());
   }
 
   private void LoadModel()
@@ -580,9 +530,9 @@ public unsafe class Application
   {
     ulong bufferSize = (ulong)Unsafe.SizeOf<UniformBufferObject>();
 
-    uniformBuffers = new GpuBuffer[swapChainImages!.Length];
+    uniformBuffers = new GpuBuffer[swapChain!.Length];
 
-    for (int i = 0; i < swapChainImages.Length; i++)
+    for (int i = 0; i < swapChain.Length; i++)
     {
       uniformBuffers[i] = new GpuBuffer(device, physicalDevice)
         .Allocate(BufferType.Uniform, bufferSize);
@@ -596,12 +546,12 @@ public unsafe class Application
       new DescriptorPoolSize()
       {
           Type = DescriptorType.UniformBuffer,
-          DescriptorCount = (uint)swapChainImages!.Length,
+          DescriptorCount = (uint)swapChain!.Length,
       },
       new DescriptorPoolSize()
       {
           Type = DescriptorType.CombinedImageSampler,
-          DescriptorCount = (uint)swapChainImages!.Length,
+          DescriptorCount = (uint)swapChain!.Length,
       }
     };
 
@@ -614,7 +564,7 @@ public unsafe class Application
         SType = StructureType.DescriptorPoolCreateInfo,
         PoolSizeCount = (uint)poolSizes.Length,
         PPoolSizes = poolSizesPtr,
-        MaxSets = (uint)swapChainImages!.Length,
+        MaxSets = (uint)swapChain!.Length,
       };
 
       if (vk!.CreateDescriptorPool(device, poolInfo, null, descriptorPoolPtr) != Result.Success)
@@ -635,8 +585,8 @@ public unsafe class Application
 
   private void CreateDescriptorSets()
   {
-    descriptorSets = new Rendering.Resources.DescriptorSet[swapChainImages!.Length];
-    for (int i = 0; i < swapChainImages!.Length; i++)
+    descriptorSets = new Rendering.Resources.DescriptorSet[swapChain!.Length];
+    for (int i = 0; i < swapChain!.Length; i++)
     {
       descriptorSets[i] = new Rendering.Resources.DescriptorSet(device, descriptorPool)
         .BindUniformBuffer(uniformBuffers![i], 0)
@@ -656,7 +606,7 @@ public unsafe class Application
     {
       model = Matrix4X4<float>.Identity * Matrix4X4.CreateFromAxisAngle<float>(new Vector3D<float>(0, 0, 1), time * Scalar.DegreesToRadians(90.0f)),
       view = Matrix4X4.CreateLookAt(new Vector3D<float>(2, 2, 2), new Vector3D<float>(0, 0, 0), new Vector3D<float>(0, 0, 1)),
-      proj = Matrix4X4.CreatePerspectiveFieldOfView(Scalar.DegreesToRadians(45.0f), (float)swapChainExtent.Width / swapChainExtent.Height, 0.1f, 10.0f),
+      proj = Matrix4X4.CreatePerspectiveFieldOfView(Scalar.DegreesToRadians(45.0f), (float)swapChain.Width / swapChain.Height, 0.1f, 10.0f),
     };
     ubo.proj.M22 *= -1;
 
@@ -687,7 +637,7 @@ public unsafe class Application
     {
       commandBuffers[i]!
         .Begin()
-        .BeginRenderPass(graphicsPipelineRenderPass, swapChainFramebuffers[i], swapChainExtent)
+        .BeginRenderPass(graphicsPipelineRenderPass, swapChainFramebuffers[i], swapChain!.Extent)
         .BindGraphicsPipeline(graphicsPipeline)
         .BindVertexBuffer(vertexBuffer)
         .BindIndexBuffer(indexBuffer)
@@ -700,12 +650,12 @@ public unsafe class Application
 
   private void CreateImageViews()
   {
-    swapChainImageViews = new ImageView[swapChainImages!.Length];
+    swapChainImageViews = new ImageView[swapChain!.Length];
 
-    for (int i = 0; i < swapChainImages.Length; i++)
+    for (int i = 0; i < swapChain.Length; i++)
     {
       swapChainImageViews[i] = new ImageView(device)
-        .SetImage(swapChainImages[i], swapChainImageFormat)
+        .SetImage(swapChain!.Images![i], swapChain.Format)
         .SetRange(ImageAspectFlags.ColorBit)
         .Allocate();
     }
@@ -721,8 +671,8 @@ public unsafe class Application
       .SetVerteShader(vertShaderCode)
       .SetFragmentShader(fragShaderCode)
       .SetVertexInputState([.. (new List<VertexInputBindingDescription> { Vertex.GetBindingDescription() })], Vertex.GetAttributeDescriptions())
-      .SetViewport(swapChainExtent.Width, swapChainExtent.Height)
-      .SetScissor(swapChainExtent.Width, swapChainExtent.Height)
+      .SetViewport(swapChain.Width, swapChain.Height)
+      .SetScissor(swapChain.Width, swapChain.Height)
       .SetRasterizationState()
       .SetMultisampleState(msaaSamples)
       .SetDepthStencilState()
@@ -734,9 +684,9 @@ public unsafe class Application
   private void CreateRenderPass()
   {
     graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
-      .AddColorAttachment(swapChainImageFormat, msaaSamples)
+      .AddColorAttachment(swapChain.Format, msaaSamples)
       .AddDepthAttachment(msaaSamples)
-      .AddResolverAttachment(swapChainImageFormat)
+      .AddResolverAttachment(swapChain.Format)
       .Allocate();
   }
 
@@ -943,7 +893,7 @@ public unsafe class Application
         .AddAttachment(depthImage.ImageView)
         .AddAttachment(swapChainImageViews[i])
         .SetRenderPass(graphicsPipelineRenderPass)
-        .SetBoundary(swapChainExtent.Width, swapChainExtent.Height)
+        .SetBoundary(swapChain.Width, swapChain.Height)
         .Allocate();
     }
   }
@@ -954,13 +904,13 @@ public unsafe class Application
     colorImage.Allocate(
       new Extent3D
       {
-        Width = swapChainExtent.Width,
-        Height = swapChainExtent.Height,
+        Width = swapChain.Width,
+        Height = swapChain.Height,
         Depth = 1
       },
       1,
       msaaSamples,
-      swapChainImageFormat,
+      swapChain.Format,
       ImageTiling.Optimal,
       ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit,
       MemoryPropertyFlags.DeviceLocalBit,
@@ -975,8 +925,8 @@ public unsafe class Application
     depthImage.Allocate(
       new Extent3D
       {
-        Width = swapChainExtent.Width,
-        Height = swapChainExtent.Height,
+        Width = swapChain.Width,
+        Height = swapChain.Height,
         Depth = 1
       },
       1,
@@ -1052,127 +1002,8 @@ public unsafe class Application
     return Vk.False;
   }
 
-  private SurfaceFormatKHR ChooseSwapSurfaceFormat(IReadOnlyList<SurfaceFormatKHR> availableFormats)
-  {
-    foreach (var availableFormat in availableFormats)
-    {
-      if (availableFormat.Format == Format.B8G8R8A8Srgb && availableFormat.ColorSpace == ColorSpaceKHR.SpaceSrgbNonlinearKhr)
-      {
-        return availableFormat;
-      }
-    }
-
-    return availableFormats[0];
-  }
-
-  private PresentModeKHR ChoosePresentMode(IReadOnlyList<PresentModeKHR> availablePresentModes)
-  {
-    foreach (var availablePresentMode in availablePresentModes)
-    {
-      if (availablePresentMode == PresentModeKHR.MailboxKhr)
-      {
-        return availablePresentMode;
-      }
-    }
-
-    return PresentModeKHR.FifoKhr;
-  }
-
-  private Extent2D ChooseSwapExtent(SurfaceCapabilitiesKHR capabilities)
-  {
-    if (capabilities.CurrentExtent.Width != uint.MaxValue)
-    {
-      return capabilities.CurrentExtent;
-    }
-    else
-    {
-      var framebufferSize = window!.FramebufferSize;
-
-      Extent2D actualExtent = new()
-      {
-        Width = (uint)framebufferSize.X,
-        Height = (uint)framebufferSize.Y
-      };
-
-      actualExtent.Width = Math.Clamp(actualExtent.Width, capabilities.MinImageExtent.Width, capabilities.MaxImageExtent.Width);
-      actualExtent.Height = Math.Clamp(actualExtent.Height, capabilities.MinImageExtent.Height, capabilities.MaxImageExtent.Height);
-
-      return actualExtent;
-    }
-  }
-
   private void CreateSwapChain()
   {
-    var swapChainSupport = physicalDevice.QuerySwapChainSupport(khrSurface, surface);
-
-    var surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.Formats);
-    var presentMode = ChoosePresentMode(swapChainSupport.PresentModes);
-    var extent = ChooseSwapExtent(swapChainSupport.Capabilities);
-
-    var imageCount = swapChainSupport.Capabilities.MinImageCount + 1;
-    if (swapChainSupport.Capabilities.MaxImageCount > 0 && imageCount > swapChainSupport.Capabilities.MaxImageCount)
-    {
-      imageCount = swapChainSupport.Capabilities.MaxImageCount;
-    }
-
-    SwapchainCreateInfoKHR creatInfo = new()
-    {
-      SType = StructureType.SwapchainCreateInfoKhr,
-      Surface = surface,
-
-      MinImageCount = imageCount,
-      ImageFormat = surfaceFormat.Format,
-      ImageColorSpace = surfaceFormat.ColorSpace,
-      ImageExtent = extent,
-      ImageArrayLayers = 1,
-      ImageUsage = ImageUsageFlags.ColorAttachmentBit,
-    };
-
-    var indices = FindQueueFamilies(physicalDevice);
-    var queueFamilyIndices = stackalloc[] { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value };
-
-    if (indices.GraphicsFamily != indices.PresentFamily)
-    {
-      creatInfo = creatInfo with
-      {
-        ImageSharingMode = SharingMode.Concurrent,
-        QueueFamilyIndexCount = 2,
-        PQueueFamilyIndices = queueFamilyIndices,
-      };
-    }
-    else
-    {
-      creatInfo.ImageSharingMode = SharingMode.Exclusive;
-    }
-
-    creatInfo = creatInfo with
-    {
-      PreTransform = swapChainSupport.Capabilities.CurrentTransform,
-      CompositeAlpha = CompositeAlphaFlagsKHR.OpaqueBitKhr,
-      PresentMode = presentMode,
-      Clipped = true,
-
-      OldSwapchain = default
-    };
-
-    if (!vk!.TryGetDeviceExtension(instance, device, out khrSwapChain))
-    {
-      throw new NotSupportedException("VK_KHR_swapchain extension not found.");
-    }
-
-    if (khrSwapChain!.CreateSwapchain(device, creatInfo, null, out swapChain) != Result.Success)
-    {
-      throw new Exception("failed to create swap chain!");
-    }
-
-    khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, null);
-    swapChainImages = new Image[imageCount];
-    fixed (Image* swapChainImagesPtr = swapChainImages)
-    {
-      khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, swapChainImagesPtr);
-    }
-
-    swapChainImageFormat = surfaceFormat.Format;
-    swapChainExtent = extent;
+    swapChain = new Swapchain(instance, device, physicalDevice, window, presentQueue, surface, khrSurface).Create();
   }
 }

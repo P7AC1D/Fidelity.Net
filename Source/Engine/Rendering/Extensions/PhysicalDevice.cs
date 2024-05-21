@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Fidelity.Rendering.Models;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 

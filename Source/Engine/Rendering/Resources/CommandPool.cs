@@ -48,7 +48,7 @@ public unsafe class CommandPool(Device device) : IDisposable
     return commandBuffers;
   }
 
-  public CommandPool Create(QueueFamilyIndices queueFamilyIndices)
+  public CommandPool Create(uint queueFamilyIndex)
   {
     if (isInitialized)
     {
@@ -58,7 +58,7 @@ public unsafe class CommandPool(Device device) : IDisposable
     CommandPoolCreateInfo poolInfo = new()
     {
       SType = StructureType.CommandPoolCreateInfo,
-      QueueFamilyIndex = queueFamilyIndices.GraphicsFamily!.Value,
+      QueueFamilyIndex = queueFamilyIndex,
       Flags = CommandPoolCreateFlags.ResetCommandBufferBit
     };
 
