@@ -113,7 +113,7 @@ public unsafe class Application
   private SampleCountFlags msaaSamples = SampleCountFlags.Count1Bit;
   private Device device;
 
-  private Queue graphicsQueue;
+  private GraphicsQueue graphicsQueue;
   private Queue presentQueue;
 
   private bool EnableValidationLayers = true;
@@ -145,10 +145,10 @@ public unsafe class Application
   private CommandPool commandPool;
   private CommandBuffer[] commandBuffers;
 
-  private Semaphore[]? imageAvailableSemaphores;
-  private Semaphore[]? renderFinishedSemaphores;
-  private Fence[]? inFlightFences;
-  private Fence[]? imagesInFlight;
+  private Rendering.Resources.Semaphore[]? imageAvailableSemaphores;
+  private Rendering.Resources.Semaphore[]? renderFinishedSemaphores;
+  private Rendering.Resources.Fence[]? inFlightFences;
+  private Rendering.Resources.Fence[]? imagesInFlight;
   private int currentFrame = 0;
   private bool frameBufferResized = false;
 
@@ -229,15 +229,15 @@ public unsafe class Application
     CreateGraphicsPipeline();
     CreateCommandBuffers();
 
-    imagesInFlight = new Fence[swapChainImages!.Length];
+    imagesInFlight = new Rendering.Resources.Fence[swapChainImages!.Length];
   }
 
   public void Render(double dt)
   {
-    vk!.WaitForFences(device, 1, inFlightFences![currentFrame], true, ulong.MaxValue);
+    inFlightFences![currentFrame].Wait();
 
     uint imageIndex = 0;
-    var result = khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame], default, ref imageIndex);
+    var result = khrSwapChain!.AcquireNextImage(device, swapChain, ulong.MaxValue, imageAvailableSemaphores![currentFrame]!.Get, default, ref imageIndex);
 
     if (result == Result.ErrorOutOfDateKhr)
     {
@@ -251,46 +251,21 @@ public unsafe class Application
 
     UpdateUniformBuffer(imageIndex);
 
-    if (imagesInFlight![imageIndex].Handle != default)
+    if (imagesInFlight![imageIndex]?.Get != null)
     {
-      vk!.WaitForFences(device, 1, imagesInFlight[imageIndex], true, ulong.MaxValue);
+      imagesInFlight[imageIndex].Wait();
     }
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
-    SubmitInfo submitInfo = new()
-    {
-      SType = StructureType.SubmitInfo,
-    };
-
-    var waitSemaphores = stackalloc[] { imageAvailableSemaphores[currentFrame] };
-    var waitStages = stackalloc[] { PipelineStageFlags.ColorAttachmentOutputBit };
-
-    var buffer = commandBuffers![imageIndex]!.Buffer;
-
-    submitInfo = submitInfo with
-    {
-      WaitSemaphoreCount = 1,
-      PWaitSemaphores = waitSemaphores,
-      PWaitDstStageMask = waitStages,
-
-      CommandBufferCount = 1,
-      PCommandBuffers = &buffer
-    };
-
-    var signalSemaphores = stackalloc[] { renderFinishedSemaphores![currentFrame] };
-    submitInfo = submitInfo with
-    {
-      SignalSemaphoreCount = 1,
-      PSignalSemaphores = signalSemaphores,
-    };
-
-    vk!.ResetFences(device, 1, inFlightFences[currentFrame]);
-
-    if (vk!.QueueSubmit(graphicsQueue, 1, submitInfo, inFlightFences[currentFrame]) != Result.Success)
-    {
-      throw new Exception("failed to submit draw command buffer!");
-    }
-
+    inFlightFences[currentFrame]!.Reset();
+    graphicsQueue.Submit(
+      commandBuffers![imageIndex]!, 
+      imageAvailableSemaphores![currentFrame],
+      renderFinishedSemaphores![currentFrame],
+      inFlightFences![currentFrame],
+      PipelineStageFlags.ColorAttachmentOutputBit);
+    
+    var signalSemaphores = stackalloc[] { renderFinishedSemaphores![currentFrame]!.Get };
     var swapChains = stackalloc[] { swapChain };
     PresentInfoKHR presentInfo = new()
     {
@@ -378,9 +353,9 @@ public unsafe class Application
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-      vk!.DestroySemaphore(device, renderFinishedSemaphores![i], null);
-      vk!.DestroySemaphore(device, imageAvailableSemaphores![i], null);
-      vk!.DestroyFence(device, inFlightFences![i], null);
+      renderFinishedSemaphores![i]!.Dispose();
+      imageAvailableSemaphores![i]!.Dispose();
+      inFlightFences![i].Dispose();
     }
 
     commandPool.Dispose();
@@ -430,30 +405,19 @@ public unsafe class Application
 
   private void CreateSyncObjects()
   {
-    imageAvailableSemaphores = new Semaphore[MAX_FRAMES_IN_FLIGHT];
-    renderFinishedSemaphores = new Semaphore[MAX_FRAMES_IN_FLIGHT];
-    inFlightFences = new Fence[MAX_FRAMES_IN_FLIGHT];
-    imagesInFlight = new Fence[swapChainImages!.Length];
-
-    SemaphoreCreateInfo semaphoreInfo = new()
-    {
-      SType = StructureType.SemaphoreCreateInfo,
-    };
-
-    FenceCreateInfo fenceInfo = new()
-    {
-      SType = StructureType.FenceCreateInfo,
-      Flags = FenceCreateFlags.SignaledBit,
-    };
+    imageAvailableSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
+    renderFinishedSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
+    inFlightFences = new Fidelity.Rendering.Resources.Fence[MAX_FRAMES_IN_FLIGHT];
+    imagesInFlight = new Fidelity.Rendering.Resources.Fence[swapChainImages!.Length];
 
     for (var i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-      if (vk!.CreateSemaphore(device, semaphoreInfo, null, out imageAvailableSemaphores[i]) != Result.Success ||
-          vk!.CreateSemaphore(device, semaphoreInfo, null, out renderFinishedSemaphores[i]) != Result.Success ||
-          vk!.CreateFence(device, fenceInfo, null, out inFlightFences[i]) != Result.Success)
-      {
-        throw new Exception("failed to create synchronization objects for a frame!");
-      }
+      imageAvailableSemaphores[i] = new Rendering.Resources.Semaphore(device)
+        .Create();
+      renderFinishedSemaphores[i] = new Rendering.Resources.Semaphore(device)
+        .Create();
+      inFlightFences[i] = new Rendering.Resources.Fence(device)
+        .Create();
     }
   }
 
@@ -555,9 +519,9 @@ public unsafe class Application
         ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
         MemoryPropertyFlags.DeviceLocalBit,
         ImageAspectFlags.ColorBit)
-      .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue)
-      .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue)
-      .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
+      .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue.Queue)
+      .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue.Queue)
+      .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue.Queue);
   }
 
   private SampleCountFlags GetMaxUsableSampleCount()
@@ -596,7 +560,7 @@ public unsafe class Application
     vertexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Vertex, bufferSize);
 
-    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
+    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue.Queue);
   }
 
   private void CreateIndexBuffer()
@@ -609,7 +573,7 @@ public unsafe class Application
 
     indexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Index, bufferSize);
-    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
+    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue.Queue);
   }
 
   private void CreateUniformBuffers()
@@ -860,8 +824,8 @@ public unsafe class Application
       throw new Exception("failed to create logical device!");
     }
 
-    vk!.GetDeviceQueue(device, indices.GraphicsFamily!.Value, 0, out graphicsQueue);
     vk!.GetDeviceQueue(device, indices.PresentFamily!.Value, 0, out presentQueue);
+    graphicsQueue = new GraphicsQueue(device).Retrieve(indices.GraphicsFamily!.Value);
 
     if (EnableValidationLayers)
     {
