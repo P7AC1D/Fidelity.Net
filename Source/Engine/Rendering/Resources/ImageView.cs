@@ -13,7 +13,7 @@ public unsafe class ImageView(Device device) : IDisposable
 
   public Silk.NET.Vulkan.ImageView View => imageView;
 
-  public ImageView SetImage(Image image, Format format)
+  public ImageView SetImage(Silk.NET.Vulkan.Image image, Format format)
   {
     if (isInitialized)
     {

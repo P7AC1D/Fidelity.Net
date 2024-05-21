@@ -18,7 +18,7 @@ using CommandBuffer = Fidelity.Rendering.Resources.CommandBuffer;
 using CommandPool = Fidelity.Rendering.Resources.CommandPool;
 using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
 using ImageView = Fidelity.Rendering.Resources.ImageView;
-using Texture = Fidelity.Rendering.Resources.Texture;
+using Image = Fidelity.Rendering.Resources.Image;
 
 namespace Fidelity;
 
@@ -114,11 +114,11 @@ public unsafe class Application
   private Rendering.Resources.DescriptorSet[]? descriptorSets;
   private Rendering.Resources.DescriptorSetLayout descriptorSetLayout;
 
-  private Texture texture;
-  private TextureSampler textureSampler;
+  private Image texture;
+  private Rendering.Resources.Sampler textureSampler;
 
-  private Texture colorImage;
-  private Texture depthImage;
+  private Image colorImage;
+  private Image depthImage;
 
   private CommandPool commandPool;
   private CommandBuffer[] commandBuffers;
@@ -362,19 +362,15 @@ public unsafe class Application
 
     for (var i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-      imageAvailableSemaphores[i] = new Rendering.Resources.Semaphore(device)
-        .Create();
-      renderFinishedSemaphores[i] = new Rendering.Resources.Semaphore(device)
-        .Create();
-      inFlightFences[i] = new Rendering.Resources.Fence(device)
-        .Create();
+      imageAvailableSemaphores[i] = new Rendering.Resources.Semaphore(device).Create();
+      renderFinishedSemaphores[i] = new Rendering.Resources.Semaphore(device).Create();
+      inFlightFences[i] = new Rendering.Resources.Fence(device).Create();
     }
   }
 
   private void CreateCommandPool()
   {
-    commandPool = new CommandPool(device)
-      .Create(swapChain.FindGraphicsQueueFamilyIndex());
+    commandPool = new CommandPool(device).Create(swapChain.FindGraphicsQueueFamilyIndex());
   }
 
   private void LoadModel()
@@ -455,7 +451,7 @@ public unsafe class Application
     img.CopyPixelDataTo(new Span<byte>(mappedData, (int)imageSize));
     stagingBuffer.Unmap();
 
-    texture = new Texture(device, physicalDevice)
+    texture = new Image(device, physicalDevice)
       .Allocate(new Extent3D
       {
         Width = (uint)img.Width,
@@ -494,7 +490,7 @@ public unsafe class Application
 
   private void CreateTextureSampler()
   {
-    textureSampler = new TextureSampler(device, physicalDevice)
+        textureSampler = new Rendering.Resources.Sampler(device, physicalDevice)
       .SetMipmapping(maxLod: mipLevels)
       .Allocate();
   }
@@ -900,7 +896,7 @@ public unsafe class Application
 
   private void CreateColorResources()
   {
-    colorImage = new Texture(device, physicalDevice);
+    colorImage = new Image(device, physicalDevice);
     colorImage.Allocate(
       new Extent3D
       {
@@ -921,7 +917,7 @@ public unsafe class Application
   {
     Format depthFormat = physicalDevice.FindSupportedFormat(new[] { Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint }, ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
 
-    depthImage = new Texture(device, physicalDevice);
+    depthImage = new Image(device, physicalDevice);
     depthImage.Allocate(
       new Extent3D
       {

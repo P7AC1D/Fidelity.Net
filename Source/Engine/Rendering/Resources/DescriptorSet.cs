@@ -6,7 +6,7 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool)
 {
   private readonly Vk vk = Vk.GetApi();
   private readonly IList<(GpuBuffer Buffer, uint Binding)> uniformBuffers = [];
-  private readonly IList<(Texture Texture, TextureSampler TextureSampler, uint Binding)> textureSamplers = [];
+  private readonly IList<(Image Texture, Sampler TextureSampler, uint Binding)> textureSamplers = [];
   private Silk.NET.Vulkan.DescriptorSet descriptorSet;
   private DescriptorSetLayout descriptorSetLayout;
   private bool isInitialized = false;
@@ -25,7 +25,7 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool)
     return this;
   }
 
-  public DescriptorSet BindTexureSampler(Texture texture, TextureSampler textureSampler, uint binding)
+  public DescriptorSet BindTexureSampler(Image texture, Sampler textureSampler, uint binding)
   {
     if (isInitialized)
     {
@@ -115,7 +115,7 @@ public unsafe class DescriptorSet(Device device, DescriptorPool descriptorPool)
     {
       DescriptorImageInfo imageInfo = new()
       {
-        Sampler = textureSamplers[i].TextureSampler!.Sampler,
+        Sampler = textureSamplers[i].TextureSampler!.Get,
         ImageView = textureSamplers[i].Texture!.ImageView!.View,
         ImageLayout = ImageLayout.ShaderReadOnlyOptimal,
       };

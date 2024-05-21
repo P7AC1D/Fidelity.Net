@@ -26,7 +26,7 @@ public unsafe class Swapchain(
   public Format Format { get; private set; }
   public uint Width => Extent.Width;
   public uint Height => Extent.Height;
-  public Image[] Images { get; private set; } = [];
+  public Silk.NET.Vulkan.Image[] Images { get; private set; } = [];
 
   public Swapchain Create()
   {
@@ -97,10 +97,10 @@ public unsafe class Swapchain(
     }
 
     khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, null);
-    Images = new Image[imageCount];
-    fixed (Image* swapChainImagesPtr = Images)
+        Images = new Silk.NET.Vulkan.Image[imageCount];
+    fixed (Silk.NET.Vulkan.Image* swapChainImagesPtr = Images)
     {
-      khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, swapChainImagesPtr);
+            khrSwapChain.GetSwapchainImages(device, swapChain, ref imageCount, swapChainImagesPtr);
     }
 
     Format = surfaceFormat.Format;

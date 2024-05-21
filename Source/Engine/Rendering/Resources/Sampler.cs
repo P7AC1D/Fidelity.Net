@@ -2,10 +2,10 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice) : IDisposable
+public unsafe class Sampler(Device device, PhysicalDevice physicalDevice) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
-  private Sampler sampler;
+  private Silk.NET.Vulkan.Sampler sampler;
   private Filter magFilter = Filter.Linear;
   private Filter minFilter = Filter.Linear;
   private SamplerAddressMode addressModeU = SamplerAddressMode.Repeat;
@@ -18,15 +18,15 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
   private float maxLod = 1;
   private bool isInitialized = false;
 
-  public Sampler Sampler => sampler;
+  public Silk.NET.Vulkan.Sampler Get => sampler;
 
-  public TextureSampler SetFilters(
+  public Sampler SetFilters(
     Filter magFilter = Filter.Linear,
     Filter minFilter = Filter.Linear)
   {
     if (isInitialized)
     {
-      throw new Exception("TextureSampler has already been initialized.");
+      throw new Exception("Sampler has already been initialized.");
     }
 
     this.magFilter = magFilter;
@@ -34,14 +34,14 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     return this;
   }
 
-  public TextureSampler SetAddressMode(
+  public Sampler SetAddressMode(
     SamplerAddressMode addressModeU = SamplerAddressMode.Repeat,
     SamplerAddressMode addressModeV = SamplerAddressMode.Repeat,
     SamplerAddressMode addressModeW = SamplerAddressMode.Repeat)
   {
     if (isInitialized)
     {
-      throw new Exception("TextureSampler has already been initialized.");
+      throw new Exception("Sampler has already been initialized.");
     }
 
     this.addressModeU = addressModeU;
@@ -50,19 +50,19 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     return this;
   }
 
-  public TextureSampler SetAnisotropy(
+  public Sampler SetAnisotropy(
     bool enableAnisotropy = false)
   {
     if (isInitialized)
     {
-      throw new Exception("TextureSampler has already been initialized.");
+      throw new Exception("Sampler has already been initialized.");
     }
 
     this.enableAnisotropy = enableAnisotropy;
     return this;
   }
 
-  public TextureSampler SetMipmapping(
+  public Sampler SetMipmapping(
     SamplerMipmapMode mipmapMode = SamplerMipmapMode.Linear,
     float mipLodBias = 0.0f,
     float minLod = 0.0f,
@@ -70,7 +70,7 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
   {
     if (isInitialized)
     {
-      throw new Exception("TextureSampler has already been initialized.");
+      throw new Exception("Sampler has already been initialized.");
     }
 
     this.mipmapMode = mipmapMode;
@@ -80,11 +80,11 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
     return this;
   }
 
-  public TextureSampler Allocate()
+  public Sampler Allocate()
   {
     if (isInitialized)
     {
-      throw new Exception("TextureSampler has already been initialized.");
+      throw new Exception("Sampler has already been initialized.");
     }
 
     vk!.GetPhysicalDeviceProperties(physicalDevice, out PhysicalDeviceProperties properties);
@@ -109,7 +109,7 @@ public unsafe class TextureSampler(Device device, PhysicalDevice physicalDevice)
       MipLodBias = mipLodBias,
     };
 
-    fixed (Sampler* textureSamplerPtr = &sampler)
+    fixed (Silk.NET.Vulkan.Sampler* textureSamplerPtr = &sampler)
     {
       if (vk!.CreateSampler(device, samplerInfo, null, textureSamplerPtr) != Result.Success)
       {

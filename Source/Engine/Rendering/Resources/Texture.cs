@@ -3,17 +3,17 @@ using Silk.NET.Vulkan;
 
 namespace Fidelity.Rendering.Resources;
 
-public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDisposable
+public unsafe class Image(Device device, PhysicalDevice physicalDevice) : IDisposable
 {
   private readonly Vk vk = Vk.GetApi();
   private DeviceMemory memory;
-  private Image image;
+  private Silk.NET.Vulkan.Image image;
   private bool initialized = false;
 
   public ImageView ImageView { get; private set; }
-  public Image Image => image;
+  public Silk.NET.Vulkan.Image Get => image;
 
-  public Texture Allocate(
+  public Image Allocate(
     Extent3D extent,
     uint mipLevels,
     SampleCountFlags numSamples,
@@ -25,7 +25,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
   {
     if (initialized)
     {
-      throw new Exception("Texture has already been allocated.");
+      throw new Exception("Image has already been allocated.");
     }
 
     ImageCreateInfo imageInfo = new()
@@ -43,7 +43,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
       SharingMode = SharingMode.Exclusive,
     };
 
-    fixed (Image* imagePtr = &image)
+    fixed (Silk.NET.Vulkan.Image* imagePtr = &image)
     {
       if (vk!.CreateImage(device, imageInfo, null, imagePtr) != Result.Success)
       {
@@ -78,7 +78,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     return this;
   }
 
-  public Texture TransitionImageLayout(
+  public Image TransitionImageLayout(
     ImageLayout oldLayout,
     ImageLayout newLayout,
     uint mipLevels,
@@ -87,7 +87,7 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
   {
     if (!initialized)
     {
-      throw new Exception("Texture has not been allocated.");
+      throw new Exception("Image has not been allocated.");
     }
 
     CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool);
@@ -139,11 +139,11 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     return this;
   }
 
-  public Texture CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, GraphicsQueue queue)
+  public Image CopyFromBuffer(GpuBuffer buffer, uint width, uint height, CommandPool commandPool, GraphicsQueue queue)
   {
     if (!initialized)
     {
-      throw new Exception("Texture has not been allocated.");
+      throw new Exception("Image has not been allocated.");
     }
 
     CommandBuffer commandBuffer = BeginSingleTimeCommands(commandPool)
@@ -152,18 +152,18 @@ public unsafe class Texture(Device device, PhysicalDevice physicalDevice) : IDis
     return this;
   }
 
-  public Texture GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, GraphicsQueue queue)
+  public Image GenerateMipMaps(Format imageFormat, uint width, uint height, uint mipLevels, CommandPool commandPool, GraphicsQueue queue)
   {
     if (!initialized)
     {
-      throw new Exception("Texture has not been allocated.");
+      throw new Exception("Image has not been allocated.");
     }
 
     vk!.GetPhysicalDeviceFormatProperties(physicalDevice, imageFormat, out var formatProperties);
 
     if ((formatProperties.OptimalTilingFeatures & FormatFeatureFlags.SampledImageFilterLinearBit) == 0)
     {
-      throw new Exception("Texture image format does not support linear blitting.");
+      throw new Exception("Image image format does not support linear blitting.");
     }
 
     var commandBuffer = BeginSingleTimeCommands(commandPool);

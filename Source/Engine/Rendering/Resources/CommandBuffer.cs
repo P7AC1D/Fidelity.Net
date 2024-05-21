@@ -193,7 +193,7 @@ public unsafe class CommandBuffer(Silk.NET.Vulkan.CommandBuffer commandBuffer)
     return this;
   }
 
-  public CommandBuffer CopyBufferToImage(GpuBuffer srcBuffer, uint width, uint height, Texture texture)
+  public CommandBuffer CopyBufferToImage(GpuBuffer srcBuffer, uint width, uint height, Image image)
   {
     if (!commandBufferRecording)
     {
@@ -217,21 +217,21 @@ public unsafe class CommandBuffer(Silk.NET.Vulkan.CommandBuffer commandBuffer)
 
     };
 
-    vk!.CmdCopyBufferToImage(commandBuffer, srcBuffer.Buffer, texture.Image, ImageLayout.TransferDstOptimal, 1, region);
+    vk!.CmdCopyBufferToImage(commandBuffer, srcBuffer.Buffer, image.Get, ImageLayout.TransferDstOptimal, 1, region);
     return this;
   }
 
-  public CommandBuffer BlitImage(Texture src, Texture dst, ImageBlit imageBlit)
+  public CommandBuffer BlitImage(Image src, Image dst, ImageBlit imageBlit)
   {
     if (!commandBufferRecording)
     {
       throw new Exception("CommandBuffer is not recording.");
     }
 
-    vk!.CmdBlitImage(
+        vk!.CmdBlitImage(
       commandBuffer,
-      src.Image, ImageLayout.TransferSrcOptimal,
-      dst.Image, ImageLayout.TransferDstOptimal,
+      src.Get, ImageLayout.TransferSrcOptimal,
+      dst.Get, ImageLayout.TransferDstOptimal,
       1, imageBlit,
       Filter.Linear);
 
