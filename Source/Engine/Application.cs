@@ -88,8 +88,7 @@ public unsafe class Application
   private ExtDebugUtils? debugUtils;
   private DebugUtilsMessengerEXT debugMessenger;
   private Swapchain swapChain;
-  private SurfaceKHR surface;
-  private KhrSurface khrSurface;
+  private Surface surface;
 
   private PhysicalDevice physicalDevice;
   private SampleCountFlags msaaSamples = SampleCountFlags.Count1Bit;
@@ -318,7 +317,7 @@ public unsafe class Application
       debugUtils!.DestroyDebugUtilsMessenger(instance, debugMessenger, null);
     }
 
-    khrSurface!.DestroySurface(instance, surface, null);
+    surface.Dispose();
     vk!.DestroyInstance(instance, null);
     vk!.Dispose();
 
@@ -688,12 +687,7 @@ public unsafe class Application
 
   private void CreateSurface()
   {
-    if (!vk!.TryGetInstanceExtension<KhrSurface>(instance, out khrSurface))
-    {
-      throw new NotSupportedException("KHR_surface extension not found.");
-    }
-
-    surface = window!.VkSurface!.Create<AllocationCallbacks>(instance.ToHandle(), null).ToSurface();
+    surface = new Surface(instance, window).Create();
   }
 
   private void PickPhysicalDevice()
@@ -702,7 +696,7 @@ public unsafe class Application
 
     foreach (var device in devices)
     {
-      if (device.IsDeviceSuitable(khrSurface, surface, deviceExtensions))
+      if (device.IsDeviceSuitable(surface, deviceExtensions))
       {
         physicalDevice = device;
         msaaSamples = GetMaxUsableSampleCount();
@@ -801,9 +795,7 @@ public unsafe class Application
         indices.GraphicsFamily = i;
       }
 
-      khrSurface!.GetPhysicalDeviceSurfaceSupport(device, i, surface, out var presentSupport);
-
-      if (presentSupport)
+      if (surface.DoesSurfaceSupportPresent(physicalDevice, i))
       {
         indices.PresentFamily = i;
       }
@@ -1000,6 +992,6 @@ public unsafe class Application
 
   private void CreateSwapChain()
   {
-    swapChain = new Swapchain(instance, device, physicalDevice, window, presentQueue, surface, khrSurface).Create();
+    swapChain = new Swapchain(instance, device, physicalDevice, window, presentQueue, surface).Create();
   }
 }

@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using Fidelity.Rendering.Models;
+using Fidelity.Rendering.Resources;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 
@@ -42,58 +43,17 @@ public unsafe static class PhysicalDeviceExtensions
     throw new Exception("Failed to find supported format!");
   }
 
-  public static QueueFamilyIndices FindQueueFamilies(this PhysicalDevice device, KhrSurface? khrSurface, SurfaceKHR surface)
+  public static bool IsDeviceSuitable(this PhysicalDevice device, Surface surface, string[] deviceExtensions)
   {
     Vk vk = Vk.GetApi();
-    var indices = new QueueFamilyIndices();
-
-    uint queueFamilityCount = 0;
-    vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, null);
-
-    var queueFamilies = new QueueFamilyProperties[queueFamilityCount];
-    fixed (QueueFamilyProperties* queueFamiliesPtr = queueFamilies)
-    {
-      vk!.GetPhysicalDeviceQueueFamilyProperties(device, ref queueFamilityCount, queueFamiliesPtr);
-    }
-
-
-    uint i = 0;
-    foreach (var queueFamily in queueFamilies)
-    {
-      if (queueFamily.QueueFlags.HasFlag(QueueFlags.GraphicsBit))
-      {
-        indices.GraphicsFamily = i;
-      }
-
-      khrSurface!.GetPhysicalDeviceSurfaceSupport(device, i, surface, out var presentSupport);
-
-      if (presentSupport)
-      {
-        indices.PresentFamily = i;
-      }
-
-      if (indices.IsComplete())
-      {
-        break;
-      }
-
-      i++;
-    }
-
-    return indices;
-  }
-
-  public static bool IsDeviceSuitable(this PhysicalDevice device, KhrSurface? khrSurface, SurfaceKHR surface, string[] deviceExtensions)
-  {
-    Vk vk = Vk.GetApi();
-    var indices = FindQueueFamilies(device, khrSurface, surface);
+    var indices = surface.FindQueueFamilies(device);
 
     bool extensionsSupported = CheckDeviceExtensionsSupport(device, deviceExtensions);
 
     bool swapChainAdequate = false;
     if (extensionsSupported)
     {
-      var swapChainSupport = QuerySwapChainSupport(device, khrSurface, surface);
+      var swapChainSupport = surface.QuerySwapChainSupport(device);
       swapChainAdequate = swapChainSupport.Formats.Any() && swapChainSupport.PresentModes.Any();
     }
 
@@ -116,46 +76,5 @@ public unsafe static class PhysicalDeviceExtensions
 
     var availableExtensionNames = availableExtensions.Select(extension => Marshal.PtrToStringAnsi((IntPtr)extension.ExtensionName)).ToHashSet();
     return deviceExtensions.All(availableExtensionNames.Contains);
-  }
-
-  public static SwapChainSupportDetails QuerySwapChainSupport(this PhysicalDevice physicalDevice, KhrSurface? khrSurface, SurfaceKHR surface)
-  {
-    var details = new SwapChainSupportDetails();
-
-    khrSurface!.GetPhysicalDeviceSurfaceCapabilities(physicalDevice, surface, out details.Capabilities);
-
-    uint formatCount = 0;
-    khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, ref formatCount, null);
-
-    if (formatCount != 0)
-    {
-      details.Formats = new SurfaceFormatKHR[formatCount];
-      fixed (SurfaceFormatKHR* formatsPtr = details.Formats)
-      {
-        khrSurface.GetPhysicalDeviceSurfaceFormats(physicalDevice, surface, ref formatCount, formatsPtr);
-      }
-    }
-    else
-    {
-      details.Formats = [];
-    }
-
-    uint presentModeCount = 0;
-    khrSurface.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, ref presentModeCount, null);
-
-    if (presentModeCount != 0)
-    {
-      details.PresentModes = new PresentModeKHR[presentModeCount];
-      fixed (PresentModeKHR* formatsPtr = details.PresentModes)
-      {
-        khrSurface.GetPhysicalDeviceSurfacePresentModes(physicalDevice, surface, ref presentModeCount, formatsPtr);
-      }
-    }
-    else
-    {
-      details.PresentModes = [];
-    }
-
-    return details;
   }
 }

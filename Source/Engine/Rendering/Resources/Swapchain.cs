@@ -12,8 +12,7 @@ public unsafe class Swapchain(
   PhysicalDevice physicalDevice,
   IWindow window,
   Queue presentQueue,
-  SurfaceKHR surface,
-  KhrSurface khrSurface)
+  Surface surface)
 {
   private Vk vk = Vk.GetApi();
   private KhrSwapchain khrSwapChain;
@@ -35,7 +34,7 @@ public unsafe class Swapchain(
       throw new Exception("SwapChain has already been initialized.");
     }
 
-    var swapChainSupport = physicalDevice.QuerySwapChainSupport(khrSurface, surface);
+    var swapChainSupport = surface.QuerySwapChainSupport(physicalDevice);
     var surfaceFormat = ChooseSwapSurfaceFormat(swapChainSupport.Formats);
     var presentMode = ChoosePresentMode(swapChainSupport.PresentModes);
     var extent = ChooseSwapExtent(swapChainSupport.Capabilities);
@@ -49,7 +48,7 @@ public unsafe class Swapchain(
     SwapchainCreateInfoKHR createInfo = new()
     {
       SType = StructureType.SwapchainCreateInfoKhr,
-      Surface = surface,
+      Surface = surface.Get,
 
       MinImageCount = imageCount,
       ImageFormat = surfaceFormat.Format,
@@ -59,7 +58,7 @@ public unsafe class Swapchain(
       ImageUsage = ImageUsageFlags.ColorAttachmentBit,
     };
 
-    var indices = physicalDevice.FindQueueFamilies(khrSurface, surface);
+    var indices = surface.FindQueueFamilies(physicalDevice);
     var queueFamilyIndices = stackalloc[] { indices.GraphicsFamily!.Value, indices.PresentFamily!.Value };
 
     if (indices.GraphicsFamily != indices.PresentFamily)
@@ -157,7 +156,7 @@ public unsafe class Swapchain(
 
   public uint FindGraphicsQueueFamilyIndex()
   {
-    var indices = physicalDevice.FindQueueFamilies(khrSurface, surface);
+    var indices = surface.FindQueueFamilies(physicalDevice);
     return indices.GraphicsFamily!.Value;
   }
 
