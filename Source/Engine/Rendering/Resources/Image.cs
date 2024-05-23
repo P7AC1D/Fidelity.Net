@@ -8,20 +8,71 @@ public unsafe class Image(Device device, PhysicalDevice physicalDevice) : IDispo
   private readonly Vk vk = Vk.GetApi();
   private DeviceMemory memory;
   private Silk.NET.Vulkan.Image image;
+  private Extent3D extent;
+  private uint mipLevels = 1;
+  private SampleCountFlags sampleCountFlags = SampleCountFlags.Count1Bit;
+  private Format format;
+  private ImageTiling imageTiling = ImageTiling.Optimal;
+  private ImageUsageFlags imageUsageFlags;
+  private MemoryPropertyFlags memoryPropertyFlags = MemoryPropertyFlags.DeviceLocalBit;
+  ImageAspectFlags imageAspectFlags;
   private bool initialized = false;
 
   public ImageView ImageView { get; private set; }
+  public uint Width => extent.Width;
+  public uint Height => extent.Height;
+  public uint Depth => extent.Depth;
   public Silk.NET.Vulkan.Image Get => image;
 
-  public Image Allocate(
-    Extent3D extent,
-    uint mipLevels,
-    SampleCountFlags numSamples,
-    Format format,
-    ImageTiling tiling,
-    ImageUsageFlags usage,
-    MemoryPropertyFlags properties,
-    ImageAspectFlags imageAspectFlags)
+  public Image SetExtent(uint width, uint height, uint depth = 1)
+  {
+    extent = new Extent3D(width, height, depth);
+    return this;
+  }
+
+  public Image SetMipLevels(uint mipLevels)
+  {
+    this.mipLevels = mipLevels;
+    return this;
+  }
+
+  public Image SetFormat(Format format)
+  {
+    this.format = format;
+    return this;
+  }
+
+  public Image SetMsaaSamples(SampleCountFlags sampleCountFlags)
+  {
+    this.sampleCountFlags = sampleCountFlags;
+    return this;
+  }
+
+  public Image SetTilling(ImageTiling imageTiling)
+  {
+    this.imageTiling = imageTiling;
+    return this;
+  }
+
+  public Image SetUsage(ImageUsageFlags imageUsageFlags)
+  {
+    this.imageUsageFlags = imageUsageFlags;
+    return this;
+  }
+
+  public Image SetMemoryProperties(MemoryPropertyFlags memoryPropertyFlags)
+  {
+    this.memoryPropertyFlags = memoryPropertyFlags;
+    return this;
+  }
+
+  public Image SetImageAspectFlags(ImageAspectFlags imageAspectFlags)
+  {
+    this.imageAspectFlags = imageAspectFlags;
+    return this;
+  }
+
+  public Image Allocate()
   {
     if (initialized)
     {
@@ -36,10 +87,10 @@ public unsafe class Image(Device device, PhysicalDevice physicalDevice) : IDispo
       MipLevels = mipLevels,
       ArrayLayers = 1,
       Format = format,
-      Tiling = tiling,
+      Tiling = imageTiling,
       InitialLayout = ImageLayout.Undefined,
-      Usage = usage,
-      Samples = numSamples,
+      Usage = imageUsageFlags,
+      Samples = sampleCountFlags,
       SharingMode = SharingMode.Exclusive,
     };
 
@@ -57,7 +108,7 @@ public unsafe class Image(Device device, PhysicalDevice physicalDevice) : IDispo
     {
       SType = StructureType.MemoryAllocateInfo,
       AllocationSize = memRequirements.Size,
-      MemoryTypeIndex = physicalDevice.FindMemoryType(memRequirements.MemoryTypeBits, properties),
+      MemoryTypeIndex = physicalDevice.FindMemoryType(memRequirements.MemoryTypeBits, memoryPropertyFlags),
     };
 
     fixed (DeviceMemory* imageMemoryPtr = &memory)

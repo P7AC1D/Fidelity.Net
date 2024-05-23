@@ -432,19 +432,13 @@ public unsafe class Application
     stagingBuffer.Unmap();
 
     texture = new Image(device, physicalDevice)
-      .Allocate(new Extent3D
-      {
-        Width = (uint)img.Width,
-        Height = (uint)img.Height,
-        Depth = 1
-      },
-        mipLevels,
-        SampleCountFlags.Count1Bit,
-        Format.R8G8B8A8Srgb,
-        ImageTiling.Optimal,
-        ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit,
-        MemoryPropertyFlags.DeviceLocalBit,
-        ImageAspectFlags.ColorBit)
+      .SetExtent((uint)img.Width, (uint)img.Height)
+      .SetMipLevels(mipLevels)
+      .SetFormat(Format.R8G8B8A8Srgb)
+      .SetUsage(ImageUsageFlags.TransferSrcBit | ImageUsageFlags.TransferDstBit | ImageUsageFlags.SampledBit)
+      .SetMemoryProperties(MemoryPropertyFlags.DeviceLocalBit)
+      .SetImageAspectFlags(ImageAspectFlags.ColorBit)
+      .Allocate()
       .TransitionImageLayout(ImageLayout.Undefined, ImageLayout.TransferDstOptimal, mipLevels, commandPool, graphicsQueue)
       .CopyFromBuffer(stagingBuffer, (uint)img.Width, (uint)img.Height, commandPool, graphicsQueue)
       .GenerateMipMaps(Format.R8G8B8A8Srgb, (uint)img.Width, (uint)img.Height, mipLevels, commandPool, graphicsQueue);
@@ -845,36 +839,22 @@ public unsafe class Application
     {
       swapChainFramebuffers[i] = new Framebuffer(device)
         .AddAttachment(new Image(device, physicalDevice)
-          .Allocate(
-            new Extent3D
-            {
-              Width = swapChain.Width,
-              Height = swapChain.Height,
-              Depth = 1
-            },
-            1,
-            msaaSamples,
-            swapChain.Format,
-            ImageTiling.Optimal,
-            ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit,
-            MemoryPropertyFlags.DeviceLocalBit,
-            ImageAspectFlags.ColorBit)
+          .SetExtent(swapChain.Width, swapChain.Height)
+          .SetMsaaSamples(msaaSamples)
+          .SetFormat(swapChain.Format)
+          .SetUsage(ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit)
+          .SetMemoryProperties(MemoryPropertyFlags.DeviceLocalBit)
+          .SetImageAspectFlags(ImageAspectFlags.ColorBit)
+          .Allocate()
           .ImageView)
         .AddAttachment(new Image(device, physicalDevice)
-          .Allocate(
-            new Extent3D
-            {
-              Width = swapChain.Width,
-              Height = swapChain.Height,
-              Depth = 1
-            },
-            1,
-            msaaSamples,
-            physicalDevice.FindSupportedFormat([Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint], ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit),
-            ImageTiling.Optimal,
-            ImageUsageFlags.DepthStencilAttachmentBit,
-            MemoryPropertyFlags.DeviceLocalBit,
-            ImageAspectFlags.DepthBit)
+          .SetExtent(swapChain.Width, swapChain.Height)
+          .SetMsaaSamples(msaaSamples)
+          .SetFormat(physicalDevice.FindSupportedFormat([Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint], ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit))
+          .SetUsage(ImageUsageFlags.DepthStencilAttachmentBit)
+          .SetMemoryProperties(MemoryPropertyFlags.DeviceLocalBit)
+          .SetImageAspectFlags(ImageAspectFlags.DepthBit)
+          .Allocate()
           .ImageView)
         .AddAttachment(swapChain.ImageViews![i])
         .SetRenderPass(graphicsPipelineRenderPass)
