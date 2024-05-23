@@ -152,7 +152,7 @@ public unsafe class Application
 
     window.Load += Load;
     window.Update += Update;
-    window.Render += Render;
+    window.Render += DrawFrame;
     window.Resize += FramebufferResizeCallback;
 
     if (window.VkSurface is null)
@@ -201,25 +201,12 @@ public unsafe class Application
     imagesInFlight = new Rendering.Resources.Fence[swapChain!.Length];
   }
 
-  public void Render(double dt)
+  public void DrawFrame(double dt)
   {
-    inFlightFences![currentFrame].Wait();
-
-    if (!swapChain.GetNextImageIndex(imageAvailableSemaphores![currentFrame], out uint imageIndex))
-    {
-      RecreateSwapChain();
-      return;
-    }
+    uint imageIndex = PrepareFrame();
 
     UpdateUniformBuffer(imageIndex);
 
-    if (imagesInFlight![imageIndex]?.Get != null)
-    {
-      imagesInFlight[imageIndex].Wait();
-    }
-    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
-
-    inFlightFences[currentFrame]!.Reset();
     graphicsQueue.Submit(
       commandBuffers![imageIndex]!, 
       imageAvailableSemaphores![currentFrame],
@@ -227,13 +214,7 @@ public unsafe class Application
       inFlightFences![currentFrame],
       PipelineStageFlags.ColorAttachmentOutputBit);
 
-    if (!swapChain.Present(renderFinishedSemaphores![currentFrame], imageIndex) || frameBufferResized)
-    {
-      frameBufferResized = false;
-      RecreateSwapChain();
-    }
-
-    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    EndFrame(imageIndex);
   }
 
   public void Run()
@@ -245,6 +226,37 @@ public unsafe class Application
   public void Update(double dt)
   {
 
+  }
+
+  private uint PrepareFrame()
+  {
+    inFlightFences![currentFrame].Wait();
+
+    if (!swapChain.GetNextImageIndex(imageAvailableSemaphores![currentFrame], out uint imageIndex))
+    {
+      RecreateSwapChain();
+      return PrepareFrame();
+    }
+
+    if (imagesInFlight![imageIndex]?.Get != null)
+    {
+      imagesInFlight[imageIndex].Wait();
+    }
+    imagesInFlight[imageIndex] = inFlightFences[currentFrame];
+
+    inFlightFences[currentFrame]!.Reset();
+    return imageIndex;
+  }
+
+  private void EndFrame(uint imageIndex)
+  {
+    if (!swapChain.Present(renderFinishedSemaphores![currentFrame], imageIndex) || frameBufferResized)
+    {
+      frameBufferResized = false;
+      RecreateSwapChain();
+    }
+
+    currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 
   private void CleanUpSwapChain()
