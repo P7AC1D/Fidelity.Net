@@ -420,8 +420,8 @@ public unsafe class Renderer(IWindow window)
   private void CreateTextureSampler()
   {
     textureSampler = new Rendering.Resources.Sampler(device, physicalDevice)
-  .SetMipmapping(maxLod: mipLevels)
-  .Allocate();
+      .SetMipmapping(maxLod: mipLevels)
+      .Allocate();
   }
 
   private void CreateVertexBuffer()
@@ -494,7 +494,7 @@ public unsafe class Renderer(IWindow window)
 
       if (vk!.CreateDescriptorPool(device, poolInfo, null, descriptorPoolPtr) != Result.Success)
       {
-        throw new Exception("failed to create descriptor pool!");
+        throw new Exception("Failed to create descriptor pool.");
       }
 
     }
@@ -524,7 +524,6 @@ public unsafe class Renderer(IWindow window)
 
   private void UpdateUniformBuffer(uint currentImage)
   {
-    //Silk Window has timing information so we are skipping the time code.
     var time = (float)window!.Time;
 
     UniformBufferObject ubo = new()
@@ -551,7 +550,7 @@ public unsafe class Renderer(IWindow window)
       }
     }
 
-    throw new Exception("failed to find suitable memory type!");
+    throw new Exception("Failed to find suitable memory type.");
   }
 
   private void CreateCommandBuffers()
@@ -623,7 +622,7 @@ public unsafe class Renderer(IWindow window)
 
     if (physicalDevice.Handle == 0)
     {
-      throw new Exception("failed to find a suitable GPU!");
+      throw new Exception("Failed to find a supported GPU.");
     }
   }
 
@@ -678,7 +677,7 @@ public unsafe class Renderer(IWindow window)
 
     if (vk!.CreateDevice(physicalDevice, in createInfo, null, out device) != Result.Success)
     {
-      throw new Exception("failed to create logical device!");
+      throw new Exception("Failed to create logical device.");
     }
 
     graphicsQueue = new GraphicsQueue(device).Retrieve(indices.GraphicsFamily!.Value);
@@ -733,7 +732,7 @@ public unsafe class Renderer(IWindow window)
 
     if (EnableValidationLayers && !CheckValidationLayerSupport())
     {
-      throw new Exception("validation layers requested, but not available!");
+      throw new Exception("No supported validation layers found.");
     }
 
     ApplicationInfo appInfo = new()
@@ -774,7 +773,7 @@ public unsafe class Renderer(IWindow window)
 
     if (vk.CreateInstance(createInfo, null, out instance) != Result.Success)
     {
-      throw new Exception("failed to create instance!");
+      throw new Exception("Failed to create instance.");
     }
 
     Marshal.FreeHGlobal((IntPtr)appInfo.PApplicationName);
