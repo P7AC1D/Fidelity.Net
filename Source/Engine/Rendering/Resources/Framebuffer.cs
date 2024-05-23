@@ -87,6 +87,15 @@ public unsafe class Framebuffer(Device device) : IDisposable
   {
     if (disposing)
     {
+      if (attachments.Count > 0)
+      {
+        foreach (var attachment in attachments)
+        {
+          attachment.Dispose();
+        }
+        attachments.Clear();
+      }
+
       vk!.DestroyFramebuffer(device, framebuffer, null);
     }
   }

@@ -1,5 +1,3 @@
-using Fidelity.Rendering.Extensions;
-using Fidelity.Rendering.Models;
 using Silk.NET.Vulkan;
 using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
@@ -11,12 +9,12 @@ public unsafe class Swapchain(
   Device device,
   PhysicalDevice physicalDevice,
   IWindow window,
-  Queue presentQueue,
   Surface surface)
 {
   private Vk vk = Vk.GetApi();
   private KhrSwapchain khrSwapChain;
   private SwapchainKHR swapChain;
+  private Queue presentQueue;
   private bool isInitialized = false;
 
   public uint Length => (uint)Images!.Length;
@@ -115,6 +113,9 @@ public unsafe class Swapchain(
         .SetRange(ImageAspectFlags.ColorBit)
         .Allocate();
     }
+
+    vk!.GetDeviceQueue(device, indices.PresentFamily!.Value, 0, out presentQueue);
+
     isInitialized = true;
     return this;
   }

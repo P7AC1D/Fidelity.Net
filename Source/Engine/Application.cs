@@ -95,7 +95,6 @@ public unsafe class Application
   private Device device;
 
   private GraphicsQueue graphicsQueue;
-  private Queue presentQueue;
 
   private bool EnableValidationLayers = true;
   private uint mipLevels;
@@ -114,9 +113,6 @@ public unsafe class Application
 
   private Image texture;
   private Rendering.Resources.Sampler textureSampler;
-
-  private Image colorImage;
-  private Image depthImage;
 
   private CommandPool commandPool;
   private CommandBuffer[] commandBuffers;
@@ -195,8 +191,6 @@ public unsafe class Application
 
     CreateSwapChain();
     CreateRenderPass();
-    CreateColorResources();
-    CreateDepthResources();
     CreateFramebuffers();
     CreateUniformBuffers();
     CreateDescriptorPool();
@@ -255,9 +249,6 @@ public unsafe class Application
 
   private void CleanUpSwapChain()
   {
-    depthImage.Dispose();
-    colorImage.Dispose();
-
     foreach (var framebuffer in swapChainFramebuffers!)
     {
       framebuffer.Dispose();
@@ -327,8 +318,6 @@ public unsafe class Application
     CreateSwapChain();
     CreateRenderPass();
     CreateCommandPool();
-    CreateColorResources();
-    CreateDepthResources();
     CreateFramebuffers();
     CreateTextureImage();
     CreateTextureSampler();
@@ -742,8 +731,7 @@ public unsafe class Application
     {
       throw new Exception("failed to create logical device!");
     }
-
-    vk!.GetDeviceQueue(device, indices.PresentFamily!.Value, 0, out presentQueue);
+    
     graphicsQueue = new GraphicsQueue(device).Retrieve(indices.GraphicsFamily!.Value);
 
     if (EnableValidationLayers)
@@ -856,53 +844,43 @@ public unsafe class Application
     for (int i = 0; i < swapChain.Length; i++)
     {
       swapChainFramebuffers[i] = new Framebuffer(device)
-        .AddAttachment(colorImage.ImageView)
-        .AddAttachment(depthImage.ImageView)
+        .AddAttachment(new Image(device, physicalDevice)
+          .Allocate(
+            new Extent3D
+            {
+              Width = swapChain.Width,
+              Height = swapChain.Height,
+              Depth = 1
+            },
+            1,
+            msaaSamples,
+            swapChain.Format,
+            ImageTiling.Optimal,
+            ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit,
+            MemoryPropertyFlags.DeviceLocalBit,
+            ImageAspectFlags.ColorBit)
+          .ImageView)
+        .AddAttachment(new Image(device, physicalDevice)
+          .Allocate(
+            new Extent3D
+            {
+              Width = swapChain.Width,
+              Height = swapChain.Height,
+              Depth = 1
+            },
+            1,
+            msaaSamples,
+            physicalDevice.FindSupportedFormat([Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint], ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit),
+            ImageTiling.Optimal,
+            ImageUsageFlags.DepthStencilAttachmentBit,
+            MemoryPropertyFlags.DeviceLocalBit,
+            ImageAspectFlags.DepthBit)
+          .ImageView)
         .AddAttachment(swapChain.ImageViews![i])
         .SetRenderPass(graphicsPipelineRenderPass)
         .SetBoundary(swapChain.Width, swapChain.Height)
         .Allocate();
     }
-  }
-
-  private void CreateColorResources()
-  {
-    colorImage = new Image(device, physicalDevice);
-    colorImage.Allocate(
-      new Extent3D
-      {
-        Width = swapChain.Width,
-        Height = swapChain.Height,
-        Depth = 1
-      },
-      1,
-      msaaSamples,
-      swapChain.Format,
-      ImageTiling.Optimal,
-      ImageUsageFlags.TransientAttachmentBit | ImageUsageFlags.ColorAttachmentBit,
-      MemoryPropertyFlags.DeviceLocalBit,
-      ImageAspectFlags.ColorBit);
-  }
-
-  private void CreateDepthResources()
-  {
-    Format depthFormat = physicalDevice.FindSupportedFormat(new[] { Format.D32Sfloat, Format.D32SfloatS8Uint, Format.D24UnormS8Uint }, ImageTiling.Optimal, FormatFeatureFlags.DepthStencilAttachmentBit);
-
-    depthImage = new Image(device, physicalDevice);
-    depthImage.Allocate(
-      new Extent3D
-      {
-        Width = swapChain.Width,
-        Height = swapChain.Height,
-        Depth = 1
-      },
-      1,
-      msaaSamples,
-      depthFormat,
-      ImageTiling.Optimal,
-      ImageUsageFlags.DepthStencilAttachmentBit,
-      MemoryPropertyFlags.DeviceLocalBit,
-      ImageAspectFlags.DepthBit);
   }
 
   private string[] GetRequiredExtensions()
@@ -971,6 +949,6 @@ public unsafe class Application
 
   private void CreateSwapChain()
   {
-    swapChain = new Swapchain(instance, device, physicalDevice, window, presentQueue, surface).Create();
+    swapChain = new Swapchain(instance, device, physicalDevice, window, surface).Create();
   }
 }
