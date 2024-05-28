@@ -16,6 +16,7 @@ public class Mesh
   private Vector3[] bitangentData = [];
   private uint[] indexData = [];
   private VertexDataFormat vertexDataFormat;
+  
   public uint VertexCount { get; private set; }
   public uint IndexCount { get; private set; }
   public uint Stride { get; private set; }
