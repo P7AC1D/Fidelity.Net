@@ -99,27 +99,26 @@ public unsafe class Renderer(IWindow window)
   private Framebuffer[] swapChainFramebuffers;
 
   private GraphicsPipeline graphicsPipeline;
-  private Rendering.Resources.RenderPass graphicsPipelineRenderPass;
+  private Resources.RenderPass graphicsPipelineRenderPass;
 
   private GpuBuffer vertexBuffer, indexBuffer;
   private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
-  private Rendering.Resources.DescriptorSet[]? descriptorSets;
-  private Rendering.Resources.DescriptorSetLayout descriptorSetLayout;
+  private Resources.DescriptorSet[]? descriptorSets;
+  private Resources.DescriptorSetLayout descriptorSetLayout;
 
   private Image texture;
-  private Rendering.Resources.Sampler textureSampler;
+  private Resources.Sampler textureSampler;
 
   private CommandPool commandPool;
   private CommandBuffer[] commandBuffers;
 
-  private Rendering.Resources.Semaphore[]? imageAvailableSemaphores;
-  private Rendering.Resources.Semaphore[]? renderFinishedSemaphores;
-  private Rendering.Resources.Fence[]? inFlightFences;
-  private Rendering.Resources.Fence[]? imagesInFlight;
+  private Resources.Semaphore[]? imageAvailableSemaphores;
+  private Resources.Semaphore[]? renderFinishedSemaphores;
+  private Resources.Fence[]? inFlightFences;
+  private Resources.Fence[]? imagesInFlight;
   private int currentFrame = 0;
-  private bool frameBufferResized = false;
 
   const int MAX_FRAMES_IN_FLIGHT = 2;
   const string MODEL_PATH = @"Assets/viking_room.obj";
@@ -290,16 +289,16 @@ public unsafe class Renderer(IWindow window)
 
   private void CreateSyncObjects()
   {
-    imageAvailableSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
-    renderFinishedSemaphores = new Fidelity.Rendering.Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
-    inFlightFences = new Fidelity.Rendering.Resources.Fence[MAX_FRAMES_IN_FLIGHT];
-    imagesInFlight = new Fidelity.Rendering.Resources.Fence[swapChain!.Length];
+    imageAvailableSemaphores = new Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
+    renderFinishedSemaphores = new Resources.Semaphore[MAX_FRAMES_IN_FLIGHT];
+    inFlightFences = new Resources.Fence[MAX_FRAMES_IN_FLIGHT];
+    imagesInFlight = new Resources.Fence[swapChain!.Length];
 
     for (var i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
-      imageAvailableSemaphores[i] = new Rendering.Resources.Semaphore(device).Create();
-      renderFinishedSemaphores[i] = new Rendering.Resources.Semaphore(device).Create();
-      inFlightFences[i] = new Rendering.Resources.Fence(device).Create();
+      imageAvailableSemaphores[i] = new Resources.Semaphore(device).Create();
+      renderFinishedSemaphores[i] = new Resources.Semaphore(device).Create();
+      inFlightFences[i] = new Resources.Fence(device).Create();
     }
   }
 
@@ -419,7 +418,7 @@ public unsafe class Renderer(IWindow window)
 
   private void CreateTextureSampler()
   {
-    textureSampler = new Rendering.Resources.Sampler(device, physicalDevice)
+    textureSampler = new Resources.Sampler(device, physicalDevice)
   .SetMipmapping(maxLod: mipLevels)
   .Allocate();
   }
@@ -430,7 +429,7 @@ public unsafe class Renderer(IWindow window)
 
     using GpuBuffer staging = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Staging, bufferSize)
-      .WriteDataArray<Vertex>(vertices);
+      .WriteDataArray(vertices);
 
     vertexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Vertex, bufferSize);
@@ -442,9 +441,9 @@ public unsafe class Renderer(IWindow window)
   {
     ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
 
-    using GpuBuffer staging = new GpuBuffer(device, physicalDevice);
+    using GpuBuffer staging = new(device, physicalDevice);
     staging.Allocate(BufferType.Staging, bufferSize)
-      .WriteDataArray<uint>(indices);
+      .WriteDataArray(indices);
 
     indexBuffer = new GpuBuffer(device, physicalDevice)
       .Allocate(BufferType.Index, bufferSize);
@@ -471,12 +470,12 @@ public unsafe class Renderer(IWindow window)
       new DescriptorPoolSize()
       {
           Type = DescriptorType.UniformBuffer,
-          DescriptorCount = (uint)swapChain!.Length,
+          DescriptorCount = swapChain!.Length,
       },
       new DescriptorPoolSize()
       {
           Type = DescriptorType.CombinedImageSampler,
-          DescriptorCount = (uint)swapChain!.Length,
+          DescriptorCount = swapChain!.Length,
       }
     };
 
@@ -489,7 +488,7 @@ public unsafe class Renderer(IWindow window)
         SType = StructureType.DescriptorPoolCreateInfo,
         PoolSizeCount = (uint)poolSizes.Length,
         PPoolSizes = poolSizesPtr,
-        MaxSets = (uint)swapChain!.Length,
+        MaxSets = swapChain!.Length,
       };
 
       if (vk!.CreateDescriptorPool(device, poolInfo, null, descriptorPoolPtr) != Result.Success)
@@ -502,7 +501,7 @@ public unsafe class Renderer(IWindow window)
 
   private void CreateDescriptorSetLayout()
   {
-    descriptorSetLayout = new Rendering.Resources.DescriptorSetLayout(device)
+    descriptorSetLayout = new Resources.DescriptorSetLayout(device)
       .AddBinding(0, DescriptorType.UniformBuffer, 1, ShaderStageFlags.VertexBit)
       .AddBinding(1, DescriptorType.CombinedImageSampler, 1, ShaderStageFlags.FragmentBit)
       .Allocate();
@@ -510,10 +509,10 @@ public unsafe class Renderer(IWindow window)
 
   private void CreateDescriptorSets()
   {
-    descriptorSets = new Rendering.Resources.DescriptorSet[swapChain!.Length];
+    descriptorSets = new Resources.DescriptorSet[swapChain!.Length];
     for (int i = 0; i < swapChain!.Length; i++)
     {
-      descriptorSets[i] = new Rendering.Resources.DescriptorSet(device, descriptorPool)
+      descriptorSets[i] = new Resources.DescriptorSet(device, descriptorPool)
         .BindUniformBuffer(uniformBuffers![i], 0)
         .BindTexureSampler(texture, textureSampler, 1)
         .SetLayout(descriptorSetLayout)
@@ -524,7 +523,6 @@ public unsafe class Renderer(IWindow window)
 
   private void UpdateUniformBuffer(uint currentImage)
   {
-    //Silk Window has timing information so we are skipping the time code.
     var time = (float)window!.Time;
 
     UniformBufferObject ubo = new()
@@ -595,7 +593,7 @@ public unsafe class Renderer(IWindow window)
 
   private void CreateRenderPass()
   {
-    graphicsPipelineRenderPass = new Rendering.Resources.RenderPass(device, physicalDevice)
+    graphicsPipelineRenderPass = new Resources.RenderPass(device, physicalDevice)
       .AddColorAttachment(swapChain.Format, msaaSamples)
       .AddDepthAttachment(msaaSamples)
       .AddResolverAttachment(swapChain.Format)
@@ -820,7 +818,6 @@ public unsafe class Renderer(IWindow window)
 
   private string[] GetRequiredExtensions()
   {
-    // TODO: DEBUG
     var glfwExtensions = window!.VkSurface!.GetRequiredExtensions(out var glfwExtensionCount);
     var extensions = SilkMarshal.PtrToStringArray((nint)glfwExtensions, (int)glfwExtensionCount);
     extensions = extensions.Append("VK_KHR_portability_enumeration").ToArray();
@@ -848,7 +845,6 @@ public unsafe class Renderer(IWindow window)
   {
     if (!EnableValidationLayers) return;
 
-    //TryGetInstanceExtension equivilant to method CreateDebugUtilsMessengerEXT from original tutorial.
     if (!vk!.TryGetInstanceExtension(instance, out debugUtils)) return;
 
     DebugUtilsMessengerCreateInfoEXT createInfo = new();

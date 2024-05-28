@@ -1,24 +1,6 @@
-using Fidelity.Rendering.Enums;
-using Fidelity.Rendering.Extensions;
-using Fidelity.Rendering.Models;
-using Fidelity.Rendering.Resources;
-using Silk.NET.Assimp;
-using Silk.NET.Core;
-using Silk.NET.Core.Native;
 using Silk.NET.Input;
 using Silk.NET.Maths;
-using Silk.NET.Vulkan;
-using Silk.NET.Vulkan.Extensions.EXT;
-using Silk.NET.Vulkan.Extensions.KHR;
 using Silk.NET.Windowing;
-using System.Reflection;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using CommandBuffer = Fidelity.Rendering.Resources.CommandBuffer;
-using CommandPool = Fidelity.Rendering.Resources.CommandPool;
-using Framebuffer = Fidelity.Rendering.Resources.Framebuffer;
-using ImageView = Fidelity.Rendering.Resources.ImageView;
-using Image = Fidelity.Rendering.Resources.Image;
 using Fidelity.Rendering;
 
 namespace Fidelity;
