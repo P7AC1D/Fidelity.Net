@@ -1,13 +1,27 @@
-﻿using Engine.SceneManagement;
+﻿using Fidelity.Core.Abstractions;
 
-namespace Engine;
+namespace Fidelity.Core;
 
 public class GameObject
 {
   public GameObject? Parent { get; protected set; } = null;
   public List<GameObject> Children { get; } = [];
+  public List<IComponent> Components {get; } = [];
   public Transform Local { get; private set; } = new Transform();
   public Transform Global { get; private set; } = new Transform();
+
+  public GameObject AddComponent(IComponent component)
+  {
+    Components.Add(component);
+    return this;
+  }
+
+  public GameObject AddNode(GameObject childNode)
+  {
+    childNode.Parent = this;
+    Children.Add(childNode);
+    return this;
+  }
 
   public void Update(float dt)
   {
@@ -22,17 +36,22 @@ public class GameObject
       {
         Global = Parent.Global * Local;
       }
-      UpdateChileNodeTransforms();
+      UpdateChildNodeTransforms();
     }
 
     if (Global.IsDirty)
     {
       Global.Update();
-      notifyComponents();
+      NotifyComponents();
+    }
+
+    foreach (var component in Components)
+    {
+      component.Update(dt);
     }
   }
 
-  private void UpdateChileNodeTransforms()
+  private void UpdateChildNodeTransforms()
   {
     foreach (var child in Children)
     {
@@ -41,6 +60,14 @@ public class GameObject
         .SetPosition(newGlobal.Position)
         .SetRotation(newGlobal.Rotation)
         .SetScale(newGlobal.Scale);
+    }
+  }
+
+  private void NotifyComponents()
+  {
+    foreach (var component in Components)
+    {
+      component.Notify(this);
     }
   }
 }

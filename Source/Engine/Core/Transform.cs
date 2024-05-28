@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 
-namespace Engine.SceneManagement;
+namespace Fidelity.Core;
 
 public class Transform
 {
