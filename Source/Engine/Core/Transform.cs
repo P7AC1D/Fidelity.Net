@@ -4,8 +4,7 @@ namespace Engine.SceneManagement;
 
 public class Transform
 {
-  private bool isDirty = true;
-
+  public bool IsDirty { get; private set;} = true;
   public Vector3 Position { get; private set; } = Vector3.Zero;
   public Vector3 Scale { get; private set; } = Vector3.One;
   public Quaternion Rotation { get; private set; } = Quaternion.Identity;
@@ -14,25 +13,31 @@ public class Transform
   public Vector3 Up => Vector3.Normalize(new Vector3(Matrix.M12, Matrix.M22, Matrix.M32));
   public Vector3 Right => Vector3.Normalize(new Vector3(Matrix.M11, Matrix.M21, Matrix.M31));
 
+  public Transform()
+  {
+    UpdateTransform();
+  }
+
   public Transform(Matrix4x4 matrix)
   {
     Matrix4x4.Decompose(matrix, out Vector3 scale, out Quaternion rotation, out Vector3 position);
     Position = position;
     Scale = scale;
     Rotation = rotation;
+    UpdateTransform();
   }
 
   public Transform Translate(Vector3 translation)
   {
     Position += translation;
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
   public Transform Rotate(Quaternion rotation)
   {
     Rotation *= rotation;
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
@@ -40,14 +45,14 @@ public class Transform
   {
     Scale *= scale;
     Vector3.Clamp(Scale, Vector3.One * 0.1f, Vector3.One * 100.0f);
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
   public Transform SetPosition(Vector3 position)
   {
     Position = position;
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
@@ -55,14 +60,14 @@ public class Transform
   {
     Scale = scale;
     Vector3.Clamp(Scale, Vector3.One * 0.1f, Vector3.One * 100.0f);
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
   public Transform SetRotation(Quaternion rotation)
   {
     Rotation = rotation;
-    isDirty = true;
+    IsDirty = true;
     return this;
   }
 
@@ -78,10 +83,10 @@ public class Transform
 
   public void Update()
   {
-    if (isDirty)
+    if (IsDirty)
     {
       UpdateTransform();
-      isDirty = false;
+      IsDirty = false;
     }
   }
 
