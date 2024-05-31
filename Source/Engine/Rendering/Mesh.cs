@@ -23,6 +23,10 @@ public class Mesh
   public uint Stride { get; private set; }
   public bool Indexed { get; private set; } = false;
 
+  // Temp
+  public GpuBuffer VertexBuffer => vertexBuffer;
+  public GpuBuffer IndexBuffer => indexBuffer;
+
   [Flags]
   private enum VertexDataFormat
   {

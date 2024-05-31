@@ -16,6 +16,10 @@ public class Model : IComponent
 
   public void Update(float dt)
   {    
+    if (isDirty)
+    {
+      Mesh.Upload(Renderer.RenderDevices.Device, Renderer.RenderDevices.PhysicalDevice, Renderer.RenderDevices.CommandPool, Renderer.RenderDevices.GraphicsQueue);
+    }
     isDirty = false;
   }
 

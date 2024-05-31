@@ -30,8 +30,18 @@ struct UniformBufferObject
   public Matrix4X4<float> proj;
 }
 
+public struct RenderDevices
+{
+  public Device Device;
+  public PhysicalDevice PhysicalDevice;
+  public CommandPool CommandPool;
+  public GraphicsQueue GraphicsQueue;
+}
+
 public unsafe class Renderer(IWindow window)
 {
+  public static RenderDevices RenderDevices;
+
   private Vk vk;
   private Instance instance;
 
@@ -56,7 +66,6 @@ public unsafe class Renderer(IWindow window)
   private GraphicsPipeline graphicsPipeline;
   private Resources.RenderPass graphicsPipelineRenderPass;
 
-  private GpuBuffer vertexBuffer, indexBuffer;
   private GpuBuffer[] uniformBuffers;
 
   private DescriptorPool descriptorPool;
@@ -103,8 +112,6 @@ public unsafe class Renderer(IWindow window)
     CreateTextureImage();
     CreateTextureSampler();
     LoadModel();
-    CreateVertexBuffer();
-    CreateIndexBuffer();
     CreateUniformBuffers();
     CreateDescriptorPool();
     CreateDescriptorSetLayout();
@@ -112,6 +119,11 @@ public unsafe class Renderer(IWindow window)
     CreateGraphicsPipeline();
     CreateCommandBuffers();
     CreateSyncObjects();
+
+    RenderDevices.Device = device;
+    RenderDevices.PhysicalDevice = physicalDevice;
+    RenderDevices.CommandPool = commandPool;
+    RenderDevices.GraphicsQueue = graphicsQueue;
   }
 
   public void DrawFrame()
@@ -215,9 +227,6 @@ public unsafe class Renderer(IWindow window)
     texture!.Dispose();
     descriptorSetLayout!.Dispose();
 
-    vertexBuffer!.Dispose();
-    indexBuffer!.Dispose();
-
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
     {
       renderFinishedSemaphores![i]!.Dispose();
@@ -263,6 +272,7 @@ public unsafe class Renderer(IWindow window)
   {    
     var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
     gameObject = ModelLoader.FromFile($"{assemblyPath}/{MODEL_PATH}", false);
+    gameObject.Update(0);
   }
 
   private void CreateTextureImage()
@@ -316,33 +326,6 @@ public unsafe class Renderer(IWindow window)
     textureSampler = new Rendering.Resources.Sampler(device, physicalDevice)
       .SetMipmapping(maxLod: mipLevels)
       .Allocate();
-  }
-
-  private void CreateVertexBuffer()
-  {
-    ulong bufferSize = (ulong)(Unsafe.SizeOf<Vertex>() * vertices!.Length);
-
-    using GpuBuffer staging = new GpuBuffer(device, physicalDevice)
-      .Allocate(BufferType.Staging, bufferSize)
-      .WriteDataArray(vertices);
-
-    vertexBuffer = new GpuBuffer(device, physicalDevice)
-      .Allocate(BufferType.Vertex, bufferSize);
-
-    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
-  }
-
-  private void CreateIndexBuffer()
-  {
-    ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indices!.Length);
-
-    using GpuBuffer staging = new(device, physicalDevice);
-    staging.Allocate(BufferType.Staging, bufferSize)
-      .WriteDataArray(indices);
-
-    indexBuffer = new GpuBuffer(device, physicalDevice)
-      .Allocate(BufferType.Index, bufferSize);
-    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private void CreateUniformBuffers()
@@ -450,6 +433,7 @@ public unsafe class Renderer(IWindow window)
   private void CreateCommandBuffers()
   {
     commandBuffers = commandPool.AllocateCommandBuffers((uint)swapChainFramebuffers!.Length);
+    var mesh = gameObject.GetComponent<Model>()!.Mesh!;
 
     for (int i = 0; i < commandBuffers.Length; i++)
     {
@@ -457,10 +441,10 @@ public unsafe class Renderer(IWindow window)
         .Begin()
         .BeginRenderPass(graphicsPipelineRenderPass, swapChainFramebuffers[i], swapChain!.Extent)
         .BindGraphicsPipeline(graphicsPipeline)
-        .BindVertexBuffer(vertexBuffer)
-        .BindIndexBuffer(indexBuffer)
+        .BindVertexBuffer(mesh.VertexBuffer)
+        .BindIndexBuffer(mesh.IndexBuffer)
         .BindDescriptorSet(graphicsPipeline, descriptorSets![i])
-        .DrawIndexed((uint)indices!.Length)
+        .DrawIndexed(mesh.IndexCount)
         .EndRenderPass()
         .End();
     }

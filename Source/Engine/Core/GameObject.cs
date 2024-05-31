@@ -16,9 +16,9 @@ public class GameObject
     return this;
   }
 
-  public IComponent? GetComponent<T>() where T: IComponent
+  public T? GetComponent<T>() where T: IComponent
   {
-    return Components.FirstOrDefault(x => x.GetType() == typeof(T));
+    return (T)Components.FirstOrDefault(x => x.GetType() == typeof(T));
   }
 
   public GameObject AddNode(GameObject childNode)
