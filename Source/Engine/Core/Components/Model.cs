@@ -1,5 +1,4 @@
-﻿using Engine.Rendering;
-using Fidelity.Core.Abstractions;
+﻿using Fidelity.Core.Abstractions;
 using Fidelity.Rendering;
 
 namespace Fidelity.Core.Components;

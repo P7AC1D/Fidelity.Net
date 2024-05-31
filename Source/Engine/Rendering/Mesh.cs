@@ -3,8 +3,9 @@ using System;
 using Fidelity.Rendering.Resources;
 using Silk.NET.Vulkan;
 using Fidelity.Rendering.Enums;
+using System.Runtime.CompilerServices;
 
-namespace Engine.Rendering;
+namespace Fidelity.Rendering;
 
 public class Mesh
 {
@@ -16,7 +17,7 @@ public class Mesh
   private Vector3[] bitangentData = [];
   private uint[] indexData = [];
   private VertexDataFormat vertexDataFormat;
-  
+
   public uint VertexCount { get; private set; }
   public uint IndexCount { get; private set; }
   public uint Stride { get; private set; }
@@ -32,7 +33,7 @@ public class Mesh
     Bitanget = 1 << 4
   };
 
-  public Mesh WithPositions(Vector3[] positions)
+  public Mesh SetPositions(Vector3[] positions)
   {
     if (positions?.Length == 0)
       throw new ArgumentException("Positions must not be empty", nameof(positions));
@@ -45,7 +46,7 @@ public class Mesh
     return this;
   }
 
-  public Mesh WithNormals(Vector3[] normals)
+  public Mesh SetNormals(Vector3[] normals)
   {
     if (normals?.Length == 0)
       throw new ArgumentException("Normals must not be empty", nameof(normals));
@@ -58,7 +59,7 @@ public class Mesh
     return this;
   }
 
-  public Mesh WithUvs(Vector2[] uvs)
+  public Mesh SetUvs(Vector2[] uvs)
   {
     if (uvs?.Length == 0)
       throw new ArgumentException("UVs must not be empty", nameof(uvs));
@@ -71,7 +72,7 @@ public class Mesh
     return this;
   }
 
-  public Mesh WithTangents(Vector3[] tangents)
+  public Mesh SetTangents(Vector3[] tangents)
   {
     if (tangents?.Length == 0)
       throw new ArgumentException("Tangents must not be empty", nameof(tangents));
@@ -84,7 +85,7 @@ public class Mesh
     return this;
   }
 
-  public Mesh WithBitangents(Vector3[] bitangents)
+  public Mesh SetBitangents(Vector3[] bitangents)
   {
     if (bitangents?.Length == 0)
       throw new ArgumentException("Bitangents must not be empty", nameof(bitangents));
@@ -97,7 +98,7 @@ public class Mesh
     return this;
   }
 
-  public Mesh WithIndices(uint[] indices)
+  public Mesh SetIndices(uint[] indices)
   {
     if (indices?.Length == 0)
       throw new ArgumentException("Indices must not be empty", nameof(indices));
@@ -164,8 +165,8 @@ public class Mesh
         bitangents[i] = Vector3.Normalize(bitangents[i]);
       }
 
-      WithTangents(tangents);
-      WithBitangents(bitangents);
+      SetTangents(tangents);
+      SetBitangents(bitangents);
     }
     return this;
   }
@@ -210,27 +211,46 @@ public class Mesh
         normals[i + 2] = normal;
       }
     }
-    WithNormals(normals);
+    SetNormals(normals);
     return this;
   }
 
-  public Mesh Upload(Device device, PhysicalDevice physicalDevice)
+  public Mesh Upload(Device device, PhysicalDevice physicalDevice, Resources.CommandPool commandPool, GraphicsQueue graphicsQueue)
   {
-    float[] vertexData = CreateRestructuredVertexDataArray(out uint stride);
-    Stride = stride;
-
-    vertexBuffer = new GpuBuffer(device, physicalDevice)
-      .Allocate(BufferType.Vertex, (ulong)vertexData.Length)
-      .WriteDataArray(vertexData);
-
-    if (Indexed)
-    {
-      indexBuffer = new GpuBuffer(device, physicalDevice)
-        .Allocate(BufferType.Index, (ulong)indexData.Length)
-        .WriteDataArray(indexData);
-    }
+    UploadVertexData(device, physicalDevice, commandPool, graphicsQueue);
+    UploadIndexData(device, physicalDevice, commandPool, graphicsQueue);
 
     return this;
+  }
+
+  
+  private unsafe void UploadVertexData(Device device, PhysicalDevice physicalDevice, Resources.CommandPool commandPool, GraphicsQueue graphicsQueue)
+  {
+    var dataToUpload = CreateRestructuredVertexDataArray(out uint stride);
+
+    ulong bufferSize = (ulong)(Unsafe.SizeOf<float>() * dataToUpload!.Length);
+
+    using GpuBuffer staging = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Staging, bufferSize)
+      .WriteDataArray(dataToUpload);
+
+    vertexBuffer = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Vertex, bufferSize);
+
+    staging.CopyData(vertexBuffer, bufferSize, commandPool, graphicsQueue);
+  }
+
+  private unsafe void UploadIndexData(Device device, PhysicalDevice physicalDevice, Resources.CommandPool commandPool, GraphicsQueue graphicsQueue)
+  {
+    ulong bufferSize = (ulong)(Unsafe.SizeOf<uint>() * indexData!.Length);
+
+    using GpuBuffer staging = new(device, physicalDevice);
+    staging.Allocate(BufferType.Staging, bufferSize)
+      .WriteDataArray(indexData);
+
+    indexBuffer = new GpuBuffer(device, physicalDevice)
+      .Allocate(BufferType.Index, bufferSize);
+    staging.CopyData(indexBuffer, bufferSize, commandPool, graphicsQueue);
   }
 
   private float[] CreateRestructuredVertexDataArray(out uint stride)

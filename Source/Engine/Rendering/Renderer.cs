@@ -1,7 +1,10 @@
-﻿using Fidelity.Rendering.Enums;
+﻿using Fidelity.Core;
+using Fidelity.Core.Components;
+using Fidelity.Rendering.Enums;
 using Fidelity.Rendering.Extensions;
 using Fidelity.Rendering.Models;
 using Fidelity.Rendering.Resources;
+using Fidelity.Utility;
 using Silk.NET.Assimp;
 using Silk.NET.Core;
 using Silk.NET.Core.Native;
@@ -20,56 +23,6 @@ using Image = Fidelity.Rendering.Resources.Image;
 
 namespace Fidelity.Rendering;
 
-struct Vertex
-{
-  public Vector3D<float> pos;
-  public Vector3D<float> color;
-
-  public Vector2D<float> textCoord;
-
-  public static VertexInputBindingDescription GetBindingDescription()
-  {
-    VertexInputBindingDescription bindingDescription = new()
-    {
-      Binding = 0,
-      Stride = (uint)Unsafe.SizeOf<Vertex>(),
-      InputRate = VertexInputRate.Vertex,
-    };
-
-    return bindingDescription;
-  }
-
-  public static VertexInputAttributeDescription[] GetAttributeDescriptions()
-  {
-    var attributeDescriptions = new[]
-    {
-      new VertexInputAttributeDescription()
-      {
-          Binding = 0,
-          Location = 0,
-          Format = Format.R32G32B32Sfloat,
-          Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(pos)),
-      },
-      new VertexInputAttributeDescription()
-      {
-          Binding = 0,
-          Location = 1,
-          Format = Format.R32G32B32Sfloat,
-          Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(color)),
-      },
-      new VertexInputAttributeDescription()
-      {
-          Binding = 0,
-          Location = 2,
-          Format = Format.R32G32Sfloat,
-          Offset = (uint)Marshal.OffsetOf<Vertex>(nameof(textCoord)),
-      }
-    };
-
-    return attributeDescriptions;
-  }
-}
-
 struct UniformBufferObject
 {
   public Matrix4X4<float> model;
@@ -81,6 +34,8 @@ public unsafe class Renderer(IWindow window)
 {
   private Vk vk;
   private Instance instance;
+
+  private GameObject gameObject;
 
   private ExtDebugUtils? debugUtils;
   private DebugUtilsMessengerEXT debugMessenger;
@@ -123,9 +78,6 @@ public unsafe class Renderer(IWindow window)
   const int MAX_FRAMES_IN_FLIGHT = 2;
   const string MODEL_PATH = @"Assets/viking_room.obj";
   const string TEXTURE_PATH = @"Assets/viking_room.png";
-
-  private Vertex[] vertices;
-  private uint[] indices;
 
   private readonly string[] deviceExtensions =
     [
@@ -308,66 +260,9 @@ public unsafe class Renderer(IWindow window)
   }
 
   private void LoadModel()
-  {
-    using var assimp = Assimp.GetApi();
+  {    
     var assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-    var scene = assimp.ImportFile($"{assemblyPath}/{MODEL_PATH}", (uint)PostProcessPreset.TargetRealTimeMaximumQuality);
-
-    var vertexMap = new Dictionary<Vertex, uint>();
-    var vertices = new List<Vertex>();
-    var indices = new List<uint>();
-
-    VisitSceneNode(scene->MRootNode);
-
-    assimp.ReleaseImport(scene);
-
-    this.vertices = vertices.ToArray();
-    this.indices = indices.ToArray();
-
-    void VisitSceneNode(Node* node)
-    {
-      for (int m = 0; m < node->MNumMeshes; m++)
-      {
-        var mesh = scene->MMeshes[node->MMeshes[m]];
-
-        for (int f = 0; f < mesh->MNumFaces; f++)
-        {
-          var face = mesh->MFaces[f];
-
-          for (int i = 0; i < face.MNumIndices; i++)
-          {
-            uint index = face.MIndices[i];
-
-            var position = mesh->MVertices[index];
-            var texture = mesh->MTextureCoords[0][(int)index];
-
-            Vertex vertex = new()
-            {
-              pos = new Vector3D<float>(position.X, position.Y, position.Z),
-              color = new Vector3D<float>(1, 1, 1),
-              //Flip Y for OBJ in Vulkan
-              textCoord = new Vector2D<float>(texture.X, 1.0f - texture.Y)
-            };
-
-            if (vertexMap.TryGetValue(vertex, out var meshIndex))
-            {
-              indices.Add(meshIndex);
-            }
-            else
-            {
-              indices.Add((uint)vertices.Count);
-              vertexMap[vertex] = (uint)vertices.Count;
-              vertices.Add(vertex);
-            }
-          }
-        }
-      }
-
-      for (int c = 0; c < node->MNumChildren; c++)
-      {
-        VisitSceneNode(node->MChildren[c]);
-      }
-    }
+    gameObject = ModelLoader.FromFile($"{assemblyPath}/{MODEL_PATH}", false);
   }
 
   private void CreateTextureImage()

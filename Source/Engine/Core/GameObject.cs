@@ -16,6 +16,11 @@ public class GameObject
     return this;
   }
 
+  public IComponent? GetComponent<T>() where T: IComponent
+  {
+    return Components.FirstOrDefault(x => x.GetType() == typeof(T));
+  }
+
   public GameObject AddNode(GameObject childNode)
   {
     childNode.Parent = this;
